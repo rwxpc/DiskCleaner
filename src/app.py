@@ -29,22 +29,22 @@ WPS_TRANSFER_DIR = r"D:\wps转存"  # WPS 文档默认转存位置
 
 # 导航项：key, 标签, 图标
 NAV = [
-    ("checkup", "清理体检", NAV_ICONS["checkup"]),
+    ("checkup", "常规清理", NAV_ICONS["checkup"]),
     ("wechat", "微信专清", NAV_ICONS["wechat"]),
     ("wxwork", "企业微信专清", NAV_ICONS["wxwork"]),
     ("wps", "WPS缓存专清", NAV_ICONS["wps"]),
-    ("large", "大文件", NAV_ICONS["large"]),
+    ("large", "扫描大文件", NAV_ICONS["large"]),
     ("log", "日志", NAV_ICONS["log"]),
 ]
 
 PAGE_META = {
-    "checkup": ("清理体检", "全盘扫描 7 类系统垃圾：用户临时文件、Gradle 缓存、系统临时文件、"
+    "checkup": ("常规清理", "全盘扫描 7 类系统垃圾：用户临时文件、Gradle 缓存、系统临时文件、"
                 "pip 缓存、npm 缓存、Chrome 缓存、回收站。",
                 "先扫描，再按风险勾选清理；各专清模块互不干扰。除回收站外均送入回收站，可随时还原。"),
     "wechat": ("微信专清", "独立页面：按图片/视频/音频/文件/缓存/聊天记录展示；聊天记录只统计不清理。", ""),
     "wxwork": ("企业微信专清", "独立页面：按图片/视频/音频/文件/缓存/聊天记录展示；聊天记录只统计不清理。", ""),
     "wps": ("WPS缓存专清", "枚举 Kingsoft 缓存目录，重点标注本地备份与云同步缓存；清理前可转存文档。", ""),
-    "large": ("大文件", "列出所选磁盘上的超大文件；双击可打开所在目录，勾选后可送入回收站。", ""),
+    "large": ("扫描大文件", "列出所选磁盘上的超大文件；双击可打开所在目录，勾选后可送入回收站。", ""),
     "log": ("日志", "所有扫描与清理动作的完整记录，同时写入本地日志文件。", ""),
 }
 
@@ -396,7 +396,7 @@ def headless_scan():
         large = disktools.scan_large_files(drives, 4096, cancel)
     except Exception:
         large = []
-    sections.append(("大文件专清(≥4GB)", large))
+    sections.append(("扫描大文件(≥4GB)", large))
     report = build_report(sections)
     path = os.path.join(os.getcwd(), f"DiskCleaner_扫描报告_{time.strftime('%Y%m%d_%H%M%S')}.txt")
     with open(path, "w", encoding="utf-8") as fh:
@@ -449,9 +449,9 @@ class App:
         for key, *_ in NAV:
             frame = tk.Frame(self.content, bg=C["page_bg"])
             self.pages[key] = dict(frame=frame, built=False)
-        # 体检页
+        # 常规清理页
         self._build_checkup()
-        # 功能页（全盘扫描已整合进清理体检，不再单独建页）
+        # 功能页（全盘扫描已整合进常规清理，不再单独建页）
         for key in ("wechat", "wxwork", "wps", "large"):
             self._build_scan_page(key)
         self._build_log_page()
@@ -475,7 +475,7 @@ class App:
         return page
 
     def _header_actions(self, key, scan_command):
-        """统一页面头部右侧工具栏（与「清理体检」完全一致）。
+        """统一页面头部右侧工具栏（与「常规清理」完全一致）。
 
         从左到右：取消全选 / 全选 / 清理选中项(红) / 一键扫描(蓝)。
         使用相同字体、配色、内边距与 pack 间距，保证各页布局层级一致。
@@ -498,7 +498,7 @@ class App:
         tip = tk.Frame(page, bg=C["success_bg"], highlightbackground=C["success_border"],
                        highlightthickness=1)
         tip.pack(fill="x", padx=26, pady=(0, 12))
-        self.checkup_tip = tk.Label(tip, text="点击右上角「一键扫描」开始全盘体检…",
+        self.checkup_tip = tk.Label(tip, text="点击右上角「一键扫描」开始全盘扫描…",
                                     bg=C["success_bg"], fg=C["success"],
                                     font=F["body"], anchor="w", padx=14, pady=8)
         self.checkup_tip.pack(fill="x")
@@ -528,7 +528,7 @@ class App:
             card = StatCard(stats, label, "0 B", "0 项", dot, width=196)
             card.pack(side="left", padx=(0, 10))
             self.stat_cards[key] = card
-        # 体检表格区（复用汇总）
+        # 常规清理表格区（复用汇总）
         body = card_frame(page)
         body.pack(fill="both", expand=True, padx=26, pady=(0, 20))
         cols = ("sel", "cat", "name", "size", "count", "path")
@@ -554,7 +554,7 @@ class App:
     def _build_scan_page(self, key):
         page = self.pages[key]["frame"]
         self._page_header(key)
-        # 头部工具按钮：统一为与「清理体检」一致的 4 按钮组，移除「上次扫描」文本/进度条/重新扫描
+        # 头部工具按钮：统一为与「常规清理」一致的 4 按钮组，移除「上次扫描」文本/进度条/重新扫描
         self._header_actions(key, lambda: self.start_scan(key))
 
         # 工具栏（磁盘/大小/时间范围等筛选项）
@@ -799,7 +799,7 @@ class App:
         threading.Thread(target=self._worker, args=(key,), daemon=True).start()
 
     def start_checkup(self):
-        """一键全盘扫描 7 类垃圾，汇总到体检表格（不含其他专清模块）。"""
+        """一键全盘扫描 7 类垃圾，汇总到常规清理表格（不含其他专清模块）。"""
         pg = self.pages["checkup"]
         pg["cancel"].clear()
         pg["scanning"] = True
@@ -814,11 +814,11 @@ class App:
             self.root, self._scan_title("checkup"), self.SCAN_TOTAL["checkup"],
             cancel_callback=lambda: pg["cancel"].set())
         pg["scan_dialog"] = dlg
-        self.log("清理体检：开始全盘扫描（7 类垃圾）")
+        self.log("常规清理：开始全盘扫描（7 类垃圾）")
         threading.Thread(target=self._checkup_worker, daemon=True).start()
 
     def _checkup_worker(self):
-        """仅扫描图2列出的 7 类垃圾；不触碰微信/企业微信/WPS/大文件等专清模块。"""
+        """仅扫描图2列出的 7 类垃圾；不触碰微信/企业微信/WPS/扫描大文件等专清模块。"""
         pg = self.pages["checkup"]
         cancel = lambda: pg["cancel"].is_set()
 
@@ -899,7 +899,7 @@ class App:
                 text=f"✓ 扫描完成：发现 {len(payload)} 类可清理垃圾，合计 {human_size(total)}",
                 fg=C["success"])
             self._update_stats(payload)
-            self.log(f"清理体检：扫描完成，{len(payload)} 类，合计 {human_size(total)}")
+            self.log(f"常规清理：扫描完成，{len(payload)} 类，合计 {human_size(total)}")
         elif kind == "error":
             self._close_scan_dialog("checkup")
             self.checkup_tip.configure(text=f"扫描出错：{payload}", fg=C["danger"])

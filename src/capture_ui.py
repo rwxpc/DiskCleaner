@@ -18,7 +18,8 @@ for i, d in enumerate(["C:", "D:", "E:", "F:", "G:", "H:", "I:", "J:", "K:"]):
 a.sidebar.update_disk_usage(info)
 root.update_idletasks(); root.update()
 
-for key, name in (("checkup", "checkup"), ("wechat", "wechat"), ("wps", "wps"), ("log", "log")):
+for key, name in (("checkup", "checkup"), ("wechat", "wechat"), ("wps", "wps"),
+                 ("large", "large"), ("log", "log")):
     a.navigate(key)
     root.update_idletasks(); root.update()
     x, y = root.winfo_rootx(), root.winfo_rooty()

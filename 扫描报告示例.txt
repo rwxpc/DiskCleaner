@@ -99,7 +99,7 @@ DiskCleaner 磁盘清理报告
   - 系统临时目录: C:\Windows\Temp | 垃圾文件 | 71.07 MB | 12 个文件
     系统临时目录: C:\Windows\Temp
 
-【大文件专清(≥4GB)】 99 项，合计 882.49 GB
+【扫描大文件(≥4GB)】 99 项，合计 882.49 GB
   - Battlefield+6.zip | 大文件 | 85.34 GB | 1 个文件
     K:\game1\Battlefield+6.zip
   - 20250311-p.SNA | 大文件 | 26.31 GB | 1 个文件
