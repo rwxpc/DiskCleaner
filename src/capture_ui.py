@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""截图核验 v1.2.0 深色控制台 UI。"""
+"""截图核验深色控制台 UI（版本号读取 ui.VERSION，避免硬编码）。"""
 import os
 import tkinter as tk
 from PIL import ImageGrab
@@ -7,7 +7,7 @@ import app
 
 root = tk.Tk()
 root.geometry("1180x760")
-root.title("DiskCleaner v1.2.0")
+root.title("DiskCleaner v%s" % app.VERSION)
 root.attributes("-topmost", True)
 a = app.App(root)
 root.update_idletasks(); root.update()
