@@ -1,0 +1,228 @@
+DiskCleaner 磁盘清理报告
+开发者：任我行电脑工作室    微信号：RWXPC8
+生成时间：2026-11-19 15:17:10
+========================================================================
+
+【微信专清】 3 项，合计 5.89 MB
+  - 微信 · WeChat Files\wxid_23g48pb5gigz22\FileStorage\Sns\Cache | 缓存 | 5.26 MB | 60 个文件
+    F:\WeChat Files\WeChat Files\wxid_23g48pb5gigz22\FileStorage\Sns\Cache
+  - 微信 · WeChat Files\wxid_23g48pb5gigz22\FileStorage\Temp | 临时文件 | 486.13 KB | 1 个文件
+    F:\WeChat Files\WeChat Files\wxid_23g48pb5gigz22\FileStorage\Temp
+  - 微信 · WeChat Files\wxid_23g48pb5gigz22\FileStorage\Cache | 缓存 | 161.45 KB | 7 个文件
+    F:\WeChat Files\WeChat Files\wxid_23g48pb5gigz22\FileStorage\Cache
+
+【企业微信专清】 17 项，合计 11.83 GB
+  - 企业微信 · 1688857430436373\Cache | 缓存 | 10.87 GB | 9675 个文件
+    E:\Users\Administrator\Documents\WXWork\1688857430436373\Cache
+  - 企业微信 · qtCef\Cache | 缓存 | 527.42 MB | 1049 个文件
+    E:\Users\Administrator\Documents\WXWork\qtCef\Cache
+  - 企业微信 · 1688857430436373\Cache\Image\Temp | 临时文件 | 181.01 MB | 772 个文件
+    E:\Users\Administrator\Documents\WXWork\1688857430436373\Cache\Image\Temp
+  - 企业微信 · 1688857430436373\WXWorkCefCache\Cache | 缓存 | 131.62 MB | 605 个文件
+    E:\Users\Administrator\Documents\WXWork\1688857430436373\WXWorkCefCache\Cache
+  - 企业微信 · Log | 日志 | 121.59 MB | 142 个文件
+    C:\Users\Admin\AppData\Roaming\Tencent\WXWork\Log
+  - 企业微信 · 1688857430436373\Cache\File\Temp | 临时文件 | 20.68 MB | 91 个文件
+    E:\Users\Administrator\Documents\WXWork\1688857430436373\Cache\File\Temp
+  - 企业微信 · Default\Cache | 缓存 | 800.36 KB | 5 个文件
+    E:\Users\Administrator\Documents\WXWork\Default\Cache
+  - 企业微信 · radium\cache | 缓存 | 400.00 KB | 2 个文件
+    C:\Users\Admin\AppData\Roaming\Tencent\WXWork\radium\cache
+  - 企业微信 · wwmapp\userdata\Global\Logs | 日志 | 302.99 KB | 4 个文件
+    C:\Users\Admin\AppData\Roaming\Tencent\WXWork\wwmapp\userdata\Global\Logs
+  - 企业微信 · Log\wxsph\logs | 日志 | 144.72 KB | 2 个文件
+    C:\Users\Admin\AppData\Roaming\Tencent\WXWork\Log\wxsph\logs
+  - 企业微信 · 5.0.13.6005\WeComAgent\python\3.10\Lib\site-packages\pip\_vendor\cachecontrol\caches | 缓存 | 5.67 KB | 3 个文件
+    D:\Program Files (x86)\WXWork\5.0.13.6005\WeComAgent\python\3.10\Lib\site-packages\pip\_vendor\cachecontrol\caches
+  - 企业微信 · 5.0.8.6009\FlutterPlugins\data\flutter_assets\packages\lib_desktop_wui\assets\icon\glyph\log | 日志 | 1.36 KB | 2 个文件
+    C:\Program Files (x86)\WXWork\5.0.8.6009\FlutterPlugins\data\flutter_assets\packages\lib_desktop_wui\assets\icon\glyph\log
+  - 企业微信 · 5.0.13.6005\FlutterPlugins\data\flutter_assets\packages\lib_desktop_wui\assets\icon\glyph\log | 日志 | 1.36 KB | 2 个文件
+    D:\Program Files (x86)\WXWork\5.0.13.6005\FlutterPlugins\data\flutter_assets\packages\lib_desktop_wui\assets\icon\glyph\log
+  - 企业微信 · 4.1.10.6007\FlutterPlugins\data\flutter_assets\packages\lib_desktop_wui\assets\icon\glyph\log | 日志 | 1.35 KB | 2 个文件
+    E:\Program Files (x86)\WXWork\4.1.10.6007\FlutterPlugins\data\flutter_assets\packages\lib_desktop_wui\assets\icon\glyph\log
+  - 企业微信 · 1688857430436373\WXWorkCefCache\Shared Dictionary\cache | 缓存 | 72 B | 2 个文件
+    E:\Users\Administrator\Documents\WXWork\1688857430436373\WXWorkCefCache\Shared Dictionary\cache
+  - 企业微信 · Default\Shared Dictionary\cache | 缓存 | 72 B | 2 个文件
+    E:\Users\Administrator\Documents\WXWork\Default\Shared Dictionary\cache
+  - 企业微信 · qtCef\Shared Dictionary\cache | 缓存 | 72 B | 2 个文件
+    E:\Users\Administrator\Documents\WXWork\qtCef\Shared Dictionary\cache
+
+【WPS缓存专清】 17 项，合计 332.85 MB
+  - WPS · wps_international\addons\data\win-x64\cef_high\1\cache | 缓存 | 80.16 MB | 344 个文件
+    C:\Users\Admin\AppData\Roaming\Kingsoft\wps_international\addons\data\win-x64\cef_high\1\cache
+  - WPS · wps_international\addons\data\win-x64\cef_high\1\cache\Cache | 缓存 | 60.66 MB | 147 个文件
+    C:\Users\Admin\AppData\Roaming\Kingsoft\wps_international\addons\data\win-x64\cef_high\1\cache\Cache
+  - WPS · office6\log | 日志 | 57.54 MB | 309 个文件
+    C:\Users\Admin\AppData\Roaming\Kingsoft\office6\log
+  - WPS · office6\cache | 缓存 | 35.27 MB | 36 个文件
+    C:\Users\Admin\AppData\Roaming\Kingsoft\office6\cache
+  - WPS · PDF\Cache | 缓存 | 32.67 MB | 1 个文件
+    C:\Users\Admin\AppData\Roaming\Kingsoft\PDF\Cache
+  - WPS · wps_international\addons\data\win-x64\cef_high\1\kappconnectivity\Cache | 缓存 | 18.00 MB | 81 个文件
+    C:\Users\Admin\AppData\Roaming\Kingsoft\wps_international\addons\data\win-x64\cef_high\1\kappconnectivity\Cache
+  - WPS · WPS Cloud Files | 云同步缓存 (WPS Cloud Files) | 17.79 MB | 39 个文件
+    E:\Users\Administrator\Documents\WPS Cloud Files
+  - WPS · wps_international\addons\data\win-x64\cef_high\1\globalcache\Cache | 缓存 | 11.70 MB | 37 个文件
+    C:\Users\Admin\AppData\Roaming\Kingsoft\wps_international\addons\data\win-x64\cef_high\1\globalcache\Cache
+  - WPS · wps_international\addons\data\win-x64\cef_high\1\docers\Cache | 缓存 | 6.81 MB | 32 个文件
+    C:\Users\Admin\AppData\Roaming\Kingsoft\wps_international\addons\data\win-x64\cef_high\1\docers\Cache
+  - WPS · wps_international\addons\data\win-x64\cef_high\1\kwpsaidocschatpanel\Cache | 缓存 | 5.67 MB | 13 个文件
+    C:\Users\Admin\AppData\Roaming\Kingsoft\wps_international\addons\data\win-x64\cef_high\1\kwpsaidocschatpanel\Cache
+  - WPS · WPS Cloud Files | 云同步缓存 (WPS Cloud Files) | 2.61 MB | 471 个文件
+    E:\Users\Administrator\Documents\WPS Cloud\WPS Cloud Files
+  - WPS · office6\docerFonts\cache | 缓存 | 2.49 MB | 295 个文件
+    C:\Users\Admin\AppData\Roaming\Kingsoft\office6\docerFonts\cache
+  - WPS · WPS Cloud Files | 云同步缓存 (WPS Cloud Files) | 891.63 KB | 25 个文件
+    C:\Users\Admin\WPS Cloud Files
+  - WPS · WPS Cloud Files | 云同步缓存 (WPS Cloud Files) | 269.96 KB | 35 个文件
+    C:\Users\Admin\AppData\Local\Kingsoft\WPS Cloud Files
+  - WPS · 12.1.0.28022\utility\backup | 本地自动备份 (office6\backup) | 159.11 KB | 3 个文件
+    D:\Program Files\WPS Office\12.1.0.28022\utility\backup
+  - WPS · 12.1.0.29158\utility\backup | 本地自动备份 (office6\backup) | 159.11 KB | 3 个文件
+    D:\Program Files\WPS Office\12.1.0.29158\utility\backup
+  - WPS · wpspdf\log | 日志 | 18.76 KB | 2 个文件
+    C:\Users\Admin\AppData\Roaming\Kingsoft\wpspdf\log
+
+【全盘垃圾扫描】 7 项，合计 24.37 GB
+  - 备份文件 | 垃圾文件 | 18.72 GB | 1605 个文件
+    备份文件
+  - 日志文件 | 垃圾文件 | 3.33 GB | 4653 个文件
+    日志文件
+  - 转储文件 | 垃圾文件 | 1.34 GB | 56 个文件
+    转储文件
+  - 临时文件 | 垃圾文件 | 387.78 MB | 611 个文件
+    临时文件
+  - 缓存文件 | 垃圾文件 | 338.59 MB | 234 个文件
+    缓存文件
+  - 系统临时目录: C:\Users\Admin\AppData\Local\Temp | 垃圾文件 | 204.93 MB | 4708 个文件
+    系统临时目录: C:\Users\Admin\AppData\Local\Temp
+  - 系统临时目录: C:\Windows\Temp | 垃圾文件 | 71.07 MB | 12 个文件
+    系统临时目录: C:\Windows\Temp
+
+【大文件专清(≥4GB)】 99 项，合计 882.49 GB
+  - Battlefield+6.zip | 大文件 | 85.34 GB | 1 个文件
+    K:\game1\Battlefield+6.zip
+  - 20250311-p.SNA | 大文件 | 26.31 GB | 1 个文件
+    F:\SNAPWin11 v23H2(22631.3880)\20250311-p.SNA
+  - 20260622.SNA | 大文件 | 24.49 GB | 1 个文件
+    F:\sanpWindows11_23H2_22631.4169\20260622.SNA
+  - data1.bin | 大文件 | 23.88 GB | 1 个文件
+    K:\game2\汤姆克兰西的分裂细胞\Tom Clancys Splinter Cell Blacklist\data1.bin
+  - data.vmdk | 大文件 | 23.11 GB | 1 个文件
+    D:\Program Files (x86)\LDPlayer9\vms\leidian0\data.vmdk
+  - seewoBD86EM.SNA | 大文件 | 19.93 GB | 1 个文件
+    H:\希沃系统\seewoBD86EM-Win10\seewoBD86EM.SNA
+  - DataPC_GRN_WorldMap.forge | 大文件 | 19.89 GB | 1 个文件
+    K:\game2\Y07 v4792145\DataPC_GRN_WorldMap.forge
+  - seewoMT61.SNA | 大文件 | 18.82 GB | 1 个文件
+    H:\希沃系统\seewoBD86EK-Win10\seewoMT61.SNA
+  - data3.bin | 大文件 | 17.61 GB | 1 个文件
+    K:\game2\幽灵行动：荒野\Tom Clancys Ghost Recon Wildlands\data3.bin
+  - data4.bin | 大文件 | 14.78 GB | 1 个文件
+    K:\game2\幽灵行动：荒野\Tom Clancys Ghost Recon Wildlands\data4.bin
+  - seewoNMB1.SNA | 大文件 | 14.52 GB | 1 个文件
+    J:\正版系统\seewoNMBwin10_1\seewoNMB1.SNA
+  - Commandos.Origins.v1.1.0.76003-0xdeadcode.zip | 大文件 | 14.10 GB | 1 个文件
+    K:\Commandos_Origins-FLT\Commandos.Origins.v1.1.0.76003-0xdeadcode.zip
+  - flt-commandos_origins.iso | 大文件 | 13.63 GB | 1 个文件
+    K:\Commandos_Origins-FLT\flt-commandos_origins.iso
+  - 滚石香港黄金十年精选辑APE格式【15.6G】.7z | 大文件 | 13.59 GB | 1 个文件
+    G:\音乐\滚石香港黄金十年精选辑APE格式【15.6G】\滚石香港黄金十年精选辑APE格式【15.6G】.7z
+  - data2.bin | 大文件 | 13.50 GB | 1 个文件
+    K:\game2\幽灵行动：荒野\Tom Clancys Ghost Recon Wildlands\data2.bin
+  - data1.bin | 大文件 | 12.86 GB | 1 个文件
+    K:\game2\幽灵行动：荒野\Tom Clancys Ghost Recon Wildlands\data1.bin
+  - DataPC_GRN_WorldMap_patch_01.forge | 大文件 | 12.75 GB | 1 个文件
+    K:\game2\Y07 v4792145\DataPC_GRN_WorldMap_patch_01.forge
+  - RCDC_Pro_Win7_64_3VV017.qcow2 | 大文件 | 12.32 GB | 1 个文件
+    J:\锐捷\云课堂\RCDC_Pro_Win7_64_3VV017.qcow2
+  - seewoWin11.SNA | 大文件 | 11.91 GB | 1 个文件
+    H:\希沃系统\seewoBH86EA-Win11\seewoWin11.SNA
+  - CO.z01 | 大文件 | 11.00 GB | 1 个文件
+    K:\Commandos Originsv1.6\CO.z01
+  - install.esd | 大文件 | 9.25 GB | 1 个文件
+    J:\ITSK-WIN7-X64-ES5S-D2.11.0.3-V2022.21\install.esd
+  - MT71A-SHG-HX(12&13dai)-Win10ProUEFI(22H2)-64Bit-CHSEEWO(A10.6)-231210.esd | 大文件 | 8.80 GB | 1 个文件
+    J:\希沃系统\希沃__Win10_22H2_64位_MT71_整机驱动\MT71A-SHG-HX(12&13dai)-Win10ProUEFI(22H2)-64Bit-CHSEEWO(A10.6)-231210.esd
+  - Topaz Photo AI_2.1.2_x64汉化破解便携版 (集成全部离线模型完整版).rar | 大文件 | 8.63 GB | 1 个文件
+    F:\123pan\Topaz Photo AI_2.1.2_x64汉化破解便携版 (集成全部离线模型完整版).rar
+  - CO.zip | 大文件 | 8.40 GB | 1 个文件
+    K:\Commandos Originsv1.6\CO.zip
+  - pakchunk13-Windows.ucas | 大文件 | 8.29 GB | 1 个文件
+    K:\Commandos Originsv1.6\CO\CO\Commandos\Content\Paks\pakchunk13-Windows.ucas
+  - pakchunk13-Windows.ucas | 大文件 | 8.29 GB | 1 个文件
+    K:\Commandos Originsv1.6\Commandos Origins No Man Left Behind\Commandos\Content\Paks\pakchunk13-Windows.ucas
+  - pakchunk13-Windows.ucas | 大文件 | 8.23 GB | 1 个文件
+    K:\Commandos_Origins-FLT\Commandos.Origins.v1.1.0.76003-0xdeadcode\Commandos.Origins.v1.1.0.76003-0xdeadcode\Commandos\Content\Paks\pakchunk13-Windows.ucas
+  - pakchunk13-Windows.ucas | 大文件 | 8.21 GB | 1 个文件
+    K:\Commandos.v1.5.1.90861\Commandos\Content\Paks\pakchunk13-Windows.ucas
+  - pakchunk13-Windows.ucas | 大文件 | 8.20 GB | 1 个文件
+    K:\Commandos Origins1.3\Commandos\Content\Paks\pakchunk13-Windows.ucas
+  - pakchunk13-Windows.ucas | 大文件 | 8.18 GB | 1 个文件
+    H:\Commandos Origins\Commandos\Content\Paks\pakchunk13-Windows.ucas
+  - 2024车载U盘6月最新版，售价158元【41GB】.7z.001 | 大文件 | 7.94 GB | 1 个文件
+    G:\音乐\2024车载U盘6月最新版，售价158元【41GB】\2024车载U盘6月最新版，售价158元【41GB】.7z.001
+  - 2024车载U盘6月最新版，售价158元【41GB】.7z.002 | 大文件 | 7.94 GB | 1 个文件
+    G:\音乐\2024车载U盘6月最新版，售价158元【41GB】\2024车载U盘6月最新版，售价158元【41GB】.7z.002
+  - 2024车载U盘6月最新版，售价158元【41GB】.7z.003 | 大文件 | 7.94 GB | 1 个文件
+    G:\音乐\2024车载U盘6月最新版，售价158元【41GB】\2024车载U盘6月最新版，售价158元【41GB】.7z.003
+  - 2024车载U盘6月最新版，售价158元【41GB】.7z.004 | 大文件 | 7.94 GB | 1 个文件
+    G:\音乐\2024车载U盘6月最新版，售价158元【41GB】\2024车载U盘6月最新版，售价158元【41GB】.7z.004
+  - 2024车载U盘6月最新版，售价158元【41GB】.7z.005 | 大文件 | 7.94 GB | 1 个文件
+    G:\音乐\2024车载U盘6月最新版，售价158元【41GB】\2024车载U盘6月最新版，售价158元【41GB】.7z.005
+  - DataPC.forge | 大文件 | 7.49 GB | 1 个文件
+    K:\game2\Y07 v4792145\DataPC.forge
+  - GDJH3.rar | 大文件 | 7.48 GB | 1 个文件
+    K:\game2\孤岛惊魂5\孤岛惊魂3\GDJH3.rar
+  - sdcard.vmdk | 大文件 | 7.41 GB | 1 个文件
+    D:\Program Files (x86)\LDPlayer9\vms\leidian0\sdcard.vmdk
+  - san_francisco.dat | 大文件 | 7.33 GB | 1 个文件
+    K:\game\Watch Dogs 2\data_win64\worlds\san_francisco\san_francisco.dat
+  - 苏军游击队1941激活125371.zip | 大文件 | 6.96 GB | 1 个文件
+    K:\game\苏军游击队1941激活125371.zip
+  - Win11x64-24H2-2024.10.9z.ESD | 大文件 | 6.93 GB | 1 个文件
+    J:\远航技术 Windows11 24H2（26100.2033）2024.10.9\Win11x64-24H2-2024.10.9z.ESD
+  - pakchunk0-Windows.ucas | 大文件 | 6.90 GB | 1 个文件
+    K:\Commandos Originsv1.6\CO\CO\Commandos\Content\Paks\pakchunk0-Windows.ucas
+  - pakchunk0-Windows.ucas | 大文件 | 6.90 GB | 1 个文件
+    K:\Commandos Originsv1.6\Commandos Origins No Man Left Behind\Commandos\Content\Paks\pakchunk0-Windows.ucas
+  - data1.bin | 大文件 | 6.90 GB | 1 个文件
+    K:\game2\地铁最后的署光\Metro Last Light\data1.bin
+  - MT61A-HX-H510-Win10ProUEFI(2004)-64Bit-CHSEEWO(VandVI)-221004.esd | 大文件 | 6.80 GB | 1 个文件
+    J:\希沃系统\希沃_Win10_2004_64位_MT61_整机驱动\MT61A-HX-H510-Win10ProUEFI(2004)-64Bit-CHSEEWO(VandVI)-221004.esd
+  - sniper3ult.iso_rebuilt.iso | 大文件 | 6.71 GB | 1 个文件
+    F:\xbox360\sniper3ult.iso_rebuilt.iso
+  - data1.bin | 大文件 | 6.32 GB | 1 个文件
+    K:\game2\地铁2033重制版\Metro 2033 Redux\data1.bin
+  - Win7x64(NT6.1.760126415) MSoffice2019_2023.03.iso | 大文件 | 6.20 GB | 1 个文件
+    J:\Win7x64Pro(NT6.1.7601.26415)+MSoffice2019\Win7x64(NT6.1.760126415) MSoffice2019_2023.03.iso
+  - WM-WindowsNoEditor.pak | 大文件 | 6.12 GB | 1 个文件
+    K:\game2\War.Mongrels\WM\Content\Paks\WM-WindowsNoEditor.pak
+  - WM-WindowsNoEditor.pak | 大文件 | 6.11 GB | 1 个文件
+    K:\game2\B61 v40797\WM\Content\Paks\WM-WindowsNoEditor.pak
+  - ITtools3.54_美化抢鲜版2(完整配置虚拟机镜像)_20240901.rar | 大文件 | 6.06 GB | 1 个文件
+    I:\下载\ITtools\ITtools3.54_美化抢鲜版2(完整配置虚拟机镜像)_20240901.rar
+  - Topaz Gigapixel AI模型(6.1).rar | 大文件 | 6.05 GB | 1 个文件
+    I:\下载\Topaz Gigapixel AI 6.1.0\6.1.0英\Topaz Gigapixel AI模型(6.1).rar
+  - userdata-qemu.img | 大文件 | 6.00 GB | 1 个文件
+    C:\Users\Admin\AppData\Roaming\apkstart\avd\apkstart.avd\userdata-qemu.img
+  - GDJH4.part1.rar | 大文件 | 6.00 GB | 1 个文件
+    K:\game2\孤岛惊魂5\孤岛惊魂4\GDJH4.part1.rar
+  - GDJH4.part2.rar | 大文件 | 6.00 GB | 1 个文件
+    K:\game2\孤岛惊魂5\孤岛惊魂4\GDJH4.part2.rar
+  - GDJH4.part3.rar | 大文件 | 6.00 GB | 1 个文件
+    K:\game2\孤岛惊魂5\孤岛惊魂4\GDJH4.part3.rar
+  - GDJH4.part4.rar | 大文件 | 6.00 GB | 1 个文件
+    K:\game2\孤岛惊魂5\孤岛惊魂4\GDJH4.part4.rar
+  - GDJH4.part5.rar | 大文件 | 6.00 GB | 1 个文件
+    K:\game2\孤岛惊魂5\孤岛惊魂4\GDJH4.part5.rar
+  - Win11-23H2-22631.3155_办公版-装机版_(2024.02.28_SHA1-25F84EBB).esd | 大文件 | 5.87 GB | 1 个文件
+    J:\TWM000\Win11-23H2-22631.3155_办公版-装机版_【2024.02.28】\Win11-23H2-22631.3155_办公版-装机版_(2024.02.28_SHA1-25F84EBB).esd
+  - Win10_Pro_x64_0606.WIM | 大文件 | 5.86 GB | 1 个文件
+    J:\吻妻系统\Win10_Pro_x64_0606.WIM
+  ... 其余 39 项略
+
+总计：919.01 GB
+说明：本报告由纯扫描生成，未修改或删除任何文件。
+------------------------------------------------------------------------
+任我行电脑工作室  ·  微信号 RWXPC8
