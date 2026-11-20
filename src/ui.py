@@ -3,8 +3,9 @@
 from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
+import math
 
-VERSION = "1.7.1"  # 版本号单一来源，app.py 与侧栏共用
+VERSION = "1.7.2"  # 版本号单一来源，app.py 与侧栏共用
 
 # ---------- 配色 ----------
 # 主题「精密仪器」：深墨蓝控制台侧栏 + 冷白数据区（自 v1.2.0 沿用至今）。
@@ -435,14 +436,19 @@ class SweepCanvas(tk.Canvas):
         self._dir = 1
         self._after_id = None
         self._debris = []
+        # v1.7.2：动画独立持续运行标志与摆动相位。真实进度长时间不更新时，
+        # 仍靠 _phase 驱动的往复微动保持画面活跃，避免被误认为卡死。
+        self._running = True
+        self._finished = False
+        self._phase = 0.0
+        self._draw_x = self._x
         self._rng = random.Random(20261120)
         self._build_scene()
         self._tick()
 
-    @property
-    def _broom_x(self):
+    def _broom_x(self, x=None):
         # 留出右侧回收桶的宽度，进度 100% 时扫把刚好停在桶左侧
-        return self._x * (self.W - 70)
+        return (self._x if x is None else x) * (self.W - 70)
 
     def _build_scene(self):
         self.create_line(10, self._ground, self.W - 10, self._ground,
@@ -461,15 +467,16 @@ class SweepCanvas(tk.Canvas):
             s = self._rng.uniform(3, 6)
             cid = self.create_rectangle(x, y, x + s, y + s,
                                         fill=palette[i % len(palette)], outline="")
-            self._debris.append([cid, x, y, "idle", 0])
+            # 末位保存碎屑边长，供 flying 结束后复位循环复用
+            self._debris.append([cid, x, y, "idle", 0, s])
         self._label = self.create_text(12, 14, anchor="w",
                                       text="正在收集待清理文件…",
                                       fill=C["text_mute"], font=F["small"])
         self._draw_broom()
 
-    def _draw_broom(self):
+    def _draw_broom(self, x=None):
         self.delete("broom")
-        x, y = self._broom_x, self._ground
+        x, y = self._broom_x(x), self._ground
         self.create_line(x + 12, y - 44, x - 1, y - 13, fill=C["primary"],
                          width=3, capstyle="round", tags="broom")
         self.create_polygon(x - 11, y - 13, x + 11, y - 13,
@@ -481,8 +488,9 @@ class SweepCanvas(tk.Canvas):
             self.create_line(bx, y - 1, bx - 1, y + 2, fill=C["primary"],
                              width=1, tags="broom")
 
-    def _sweep_debris(self):
-        bx = self._broom_x
+    def _sweep_debris(self, bx=None):
+        if bx is None:
+            bx = self._broom_x()
         for d in self._debris:
             state = d[3]
             if state == "gone":
@@ -491,11 +499,18 @@ class SweepCanvas(tk.Canvas):
                 self.move(d[0], 3.4, -1.7)
                 d[4] -= 1
                 if d[4] <= 0:
-                    self.delete(d[0])
-                    d[3] = "gone"
-            elif d[1] <= bx + 10:
-                d[3] = "flying"
-                d[4] = 9
+                    # v1.7.2：复位到地面原位循环复用，长时间清理也持续有
+                    # 碎屑被扫起，不会「扫完一遍就整幅画面死寂」。
+                    self.coords(d[0], d[1], d[2],
+                                d[1] + d[5], d[2] + d[5])
+                    d[3] = "idle"
+                    d[4] = 5  # 冷却帧，避免刚落地又被同一位置的扫把卷起
+            else:  # idle
+                if d[4] > 0:
+                    d[4] -= 1
+                elif d[1] <= bx + 10:
+                    d[3] = "flying"
+                    d[4] = 9
 
     def set_progress(self, fraction):
         """由真实清理进度驱动（0.0 ~ 1.0）。"""
@@ -503,8 +518,18 @@ class SweepCanvas(tk.Canvas):
         self._target = max(0.0, min(1.0, float(fraction)))
 
     def finish(self):
+        """任务完成：定格到终点并停止动画（不再持续播放）。"""
+        self._finished = True
         self._idle = False
         self._target = 1.0
+        self._x = 1.0
+        self._draw_x = 1.0
+        try:
+            self._draw_broom(1.0)
+            self._sweep_debris(self._broom_x(1.0))
+        except tk.TclError:
+            pass
+        self.stop()
         self.after(360, self._clear_all)
 
     def _clear_all(self):
@@ -518,6 +543,7 @@ class SweepCanvas(tk.Canvas):
             pass
 
     def stop(self):
+        self._running = False
         try:
             if self._after_id:
                 self.after_cancel(self._after_id)
@@ -525,8 +551,11 @@ class SweepCanvas(tk.Canvas):
             pass
 
     def _tick(self):
+        if not self._running:
+            return
         try:
             if not self.winfo_exists():
+                self._running = False
                 return
             if self._idle:
                 self._x += 0.005 * self._dir
@@ -536,11 +565,19 @@ class SweepCanvas(tk.Canvas):
                     self._dir = 1
             else:
                 self._x += (self._target - self._x) * 0.14
-            self._draw_broom()
-            self._sweep_debris()
+            # v1.7.2：叠加持续往复微动。即使真实进度长时间不变，绘制位置
+            # 也不会收敛静止，动画一直播放到任务完成才由 finish() 停止。
+            self._phase += 0.13
+            swing = 0.05 * math.sin(self._phase)
+            draw_x = max(0.02, min(0.98, self._x + swing))
+            self._draw_x = draw_x
+            self._draw_broom(draw_x)
+            self._sweep_debris(self._broom_x(draw_x))
             if not self._idle:
-                self.itemconfigure(self._label, text="清理进度 %d%%" % int(self._x * 100))
+                self.itemconfigure(
+                    self._label, text="清理进度 %d%%" % int(self._x * 100))
         except tk.TclError:
+            self._running = False
             return
         self._after_id = self.after(30, self._tick)
 
@@ -562,13 +599,18 @@ class MagnifierCanvas(tk.Canvas):
         self._dir = 1
         self._after_id = None
         self._cells = []
+        # v1.7.2：与 SweepCanvas 相同，动画独立持续运行到 finish()。
+        self._running = True
+        self._finished = False
+        self._phase = 0.0
+        self._draw_x = self._x
         self._cy = height - 34
         self._r = 15
         self._build_scene()
         self._tick()
 
-    def _mag_x(self):
-        return 22 + self._x * (self.W - 70)
+    def _mag_x(self, x=None):
+        return 22 + (self._x if x is None else x) * (self.W - 70)
 
     def _build_scene(self):
         self.create_line(10, self.H - 14, self.W - 10, self.H - 14,
@@ -585,9 +627,9 @@ class MagnifierCanvas(tk.Canvas):
                                       fill=C["text_mute"], font=F["small"])
         self._draw_magnifier()
 
-    def _draw_magnifier(self):
+    def _draw_magnifier(self, x=None):
         self.delete("mag")
-        x, cy, r = self._mag_x(), self._cy, self._r
+        x, cy, r = self._mag_x(x), self._cy, self._r
         self.create_oval(x - r, cy - r, x + r, cy + r,
                          fill=C["primary_light"], outline=C["primary"],
                          width=2, tags="mag")
@@ -608,8 +650,18 @@ class MagnifierCanvas(tk.Canvas):
         self._target = max(0.0, min(1.0, float(fraction)))
 
     def finish(self):
+        """任务完成：定格到终点并停止动画（不再持续播放）。"""
+        self._finished = True
         self._idle = False
         self._target = 1.0
+        self._x = 1.0
+        self._draw_x = 1.0
+        try:
+            self._draw_magnifier(1.0)
+            self._highlight(self._mag_x(1.0))
+        except tk.TclError:
+            pass
+        self.stop()
         self.after(260, self._show_done)
 
     def _show_done(self):
@@ -619,6 +671,7 @@ class MagnifierCanvas(tk.Canvas):
             pass
 
     def stop(self):
+        self._running = False
         try:
             if self._after_id:
                 self.after_cancel(self._after_id)
@@ -626,8 +679,11 @@ class MagnifierCanvas(tk.Canvas):
             pass
 
     def _tick(self):
+        if not self._running:
+            return
         try:
             if not self.winfo_exists():
+                self._running = False
                 return
             if self._idle:
                 self._x += 0.008 * self._dir
@@ -637,10 +693,18 @@ class MagnifierCanvas(tk.Canvas):
                     self._dir = 1
             else:
                 self._x += (self._target - self._x) * 0.14
-            self._draw_magnifier()
-            self._highlight(self._mag_x())
+            # v1.7.2：进度定位之上叠加持续巡视摆动，扫描大文件等长时间
+            # 无进度回调的阶段也保持运动，直到 finish() 才停止。
+            self._phase += 0.13
+            swing = 0.05 * math.sin(self._phase)
+            draw_x = max(0.02, min(0.98, self._x + swing))
+            self._draw_x = draw_x
+            self._draw_magnifier(draw_x)
+            self._highlight(self._mag_x(draw_x))
             if not self._idle:
-                self.itemconfigure(self._label, text="扫描进度 %d%%" % int(self._x * 100))
+                self.itemconfigure(
+                    self._label, text="扫描进度 %d%%" % int(self._x * 100))
         except tk.TclError:
+            self._running = False
             return
         self._after_id = self.after(30, self._tick)
