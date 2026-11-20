@@ -210,7 +210,9 @@ class DeleteProgressDialog:
         self.total = 0
         self.done = 0
         self.ok_count = 0
+        self.reboot_count = 0
         self.failed = []
+        self.reboot_on_locked = False
         self.on_finish = on_finish
         self.cancelled = threading.Event()
 
@@ -225,7 +227,7 @@ class DeleteProgressDialog:
                        highlightthickness=1)
         box.pack(padx=16, pady=16, fill="both", expand=True)
 
-        tk.Label(box, text="正在清理并送入回收站…", bg=C["card"], fg=C["text"],
+        tk.Label(box, text="正在清理文件…", bg=C["card"], fg=C["text"],
                  font=F["title"]).pack(anchor="w", padx=18, pady=(16, 4))
         # 动态扫地效果：扫把随真实清理进度推进，碎屑被扫入右侧回收桶
         self.sweep = SweepCanvas(box, width=430, height=78)
@@ -240,7 +242,7 @@ class DeleteProgressDialog:
         self.stat_var = tk.StringVar(value="0 / 0")
         tk.Label(box, textvariable=self.stat_var, bg=C["card"], fg=C["text_sub"],
                  font=F["body"]).pack(anchor="w", padx=18)
-        self.detail_var = tk.StringVar(value="成功 0  失败 0")
+        self.detail_var = tk.StringVar(value="回收站 0  重启清理 0  失败 0")
         tk.Label(box, textvariable=self.detail_var, bg=C["card"], fg=C["success"],
                  font=F["small"]).pack(anchor="w", padx=18, pady=(2, 4))
 
@@ -261,7 +263,8 @@ class DeleteProgressDialog:
             self.top.geometry("500x350")
         self.top.after(80, self._poll)
 
-    def start(self, items, days, collect_fn):
+    def start(self, items, days, collect_fn, reboot_on_locked=False):
+        self.reboot_on_locked = reboot_on_locked
         self.file_var.set("正在收集待清理文件…")
         self.pb.configure(mode="indeterminate")
         self.pb.start(10)
@@ -269,10 +272,10 @@ class DeleteProgressDialog:
                          daemon=True).start()
 
     def _work(self, items, days, collect_fn):
-        def progress(i, t, path, ok):
+        def progress(i, t, path, status):
             if self.cancelled.is_set() and i < t:
                 return
-            self.q.put(("progress", (i, t, path, ok)))
+            self.q.put(("progress", (i, t, path, status)))
 
         try:
             recycle_targets, permanent_targets = [], []
@@ -287,24 +290,28 @@ class DeleteProgressDialog:
             targets = recycle_targets + permanent_targets
             self.q.put(("collected", targets))
             if not targets:
-                self.q.put(("done", (0, [])))
+                self.q.put(("done", (0, [], 0)))
                 return
 
             cancel = lambda: self.cancelled.is_set()
-            ok_count, failed = 0, []
+            ok_count, failed, reboot_count = 0, [], 0
             if recycle_targets:
-                ok, bad = send_to_recycle_bin(
-                    recycle_targets, progress=progress, cancel=cancel)
+                ok, bad, reb = send_to_recycle_bin(
+                    recycle_targets, progress=progress, cancel=cancel,
+                    reboot_on_locked=self.reboot_on_locked)
                 ok_count += ok
                 failed.extend(bad)
+                reboot_count += reb
             if permanent_targets and not self.cancelled.is_set():
-                def perm_progress(i, t, path, ok):
-                    progress(len(recycle_targets) + i, len(targets), path, ok)
-                ok, bad = delete_permanent(
-                    permanent_targets, progress=perm_progress, cancel=cancel)
+                def perm_progress(i, t, path, status):
+                    progress(len(recycle_targets) + i, len(targets), path, status)
+                ok, bad, reb = delete_permanent(
+                    permanent_targets, progress=perm_progress, cancel=cancel,
+                    reboot_on_locked=self.reboot_on_locked)
                 ok_count += ok
                 failed.extend(bad)
-            self.q.put(("done", (ok_count, failed)))
+                reboot_count += reb
+            self.q.put(("done", (ok_count, failed, reboot_count)))
         except Exception as exc:
             self.q.put(("error", str(exc)))
 
@@ -324,9 +331,11 @@ class DeleteProgressDialog:
                     self.stat_var.set(f"0 / {self.total}")
                     continue
                 if kind == "progress":
-                    i, t, path, ok = payload
+                    i, t, path, status = payload
                     self.done = i
-                    if ok:
+                    if status == "reboot":
+                        self.reboot_count += 1
+                    elif status:
                         self.ok_count += 1
                     else:
                         self.failed.append(path)
@@ -334,31 +343,39 @@ class DeleteProgressDialog:
                     self.pb["value"] = i
                     self.sweep.set_progress(i / max(t, 1))
                     self.stat_var.set(f"{i} / {t}")
-                    self.detail_var.set(f"成功 {self.ok_count}  失败 {len(self.failed)}")
+                    self.detail_var.set(
+                        f"回收站 {self.ok_count}  重启清理 {self.reboot_count}  "
+                        f"失败 {len(self.failed)}")
                     try:
                         self.top.title(f"正在清理 {i}/{t} — {os.path.basename(path)}")
                     except Exception:
                         pass
                 elif kind in ("done", "error"):
-                    ok_count, failed = payload if kind == "done" else (self.ok_count, self.failed)
+                    if kind == "done":
+                        ok_count, failed, reboot_count = payload
+                    else:
+                        ok_count, failed, reboot_count = (
+                            self.ok_count, self.failed, self.reboot_count)
                     self.file_var.set("清理完成" if kind == "done" else "清理出错")
-                    self.detail_var.set(f"成功 {ok_count}  失败 {len(failed)}")
+                    self.detail_var.set(
+                        f"回收站 {ok_count}  重启清理 {reboot_count}  失败 {len(failed)}")
                     self.pb["value"] = self.pb["maximum"]
                     self.sweep.finish()
-                    self.top.after(700, lambda: self._finish(ok_count, failed))
+                    self.top.after(700, lambda: self._finish(
+                        ok_count, failed, reboot_count))
                     return
         except queue.Empty:
             pass
         self.top.after(80, self._poll)
 
-    def _finish(self, ok_count, failed):
+    def _finish(self, ok_count, failed, reboot_count=0):
         self.sweep.stop()
         try:
             self.top.destroy()
         except Exception:
             pass
         if self.on_finish:
-            self.on_finish(ok_count, failed)
+            self.on_finish(ok_count, failed, reboot_count)
 
 
 def headless_scan():
@@ -1445,24 +1462,31 @@ class App:
         # 用实时进度小窗执行删除：显示正在删除的文件名与状态，完成后立即刷新列表
         self.log(f"{PAGE_META[key][0]}：开始清理 {len(chosen)} 项")
 
-        def on_finish(ok_count, failed):
+        # 大文件页可能是用户重要数据，不启用「重启后删除」；
+        # 临时/缓存类（常规清理、微信、企业微信、WPS）才对被占用项登记重启清理。
+        reboot_ok = key != "large"
+
+        def on_finish(ok_count, failed, reboot_count=0):
             self.log(f"清理：已送入回收站 {ok_count} 项，" +
-                     (f"失败 {len(failed)} 项" if failed else "全部成功"))
+                     (f"已安排重启清理 {reboot_count} 项，" if reboot_count else "") +
+                     (f"失败 {len(failed)} 项" if failed else "无失败"))
             self._refresh_disk_usage()
             # 删除完成后立即刷新当前列表
             if key == "checkup":
                 self.start_checkup()
             else:
                 self.start_scan(key)
-            messagebox.showinfo(
-                APP_NAME,
-                f"清理完成：{ok_count} 项已送入回收站。" +
-                (f"\n失败 {len(failed)} 项（文件可能被占用）。" if failed else ""),
-            )
+            msg = f"清理完成：{ok_count} 项已送入回收站（可还原）。"
+            if reboot_count:
+                msg += (f"\n{reboot_count} 项被其他程序占用，已安排在下次重启时自动删除。"
+                        "\n这些文件重启前仍在磁盘上，重启清理不可还原。")
+            if failed:
+                msg += f"\n失败 {len(failed)} 项（无权限或路径失效）。"
+            messagebox.showinfo(APP_NAME, msg)
 
         dlg = DeleteProgressDialog(
             self.root, f"{PAGE_META[key][0]} — 实时清理进度", on_finish=on_finish)
-        dlg.start(chosen, days, self._collect_files)
+        dlg.start(chosen, days, self._collect_files, reboot_on_locked=reboot_ok)
 
 
 def main():

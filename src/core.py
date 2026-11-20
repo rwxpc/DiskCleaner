@@ -12,6 +12,11 @@ from typing import Callable, Iterable
 
 FILE_ATTRIBUTE_REPARSE_POINT = 0x400
 RECYCLE_FLAG = 0x0040 | 0x0004 | 0x0010 | 0x0400  # ALLOWUNDO | NOCONFIRMATION | SILENT | NOERRORUI
+# v1.4.0：被占用文件改走「重启后自动删除」，需管理员权限（本程序已 requireAdministrator）
+DELETE_ACCESS = 0x00010000      # 请求 DELETE 权限，用于探测占用
+FILE_FLAG_BACKUP_SEMANTICS = 0x02000000  # 允许对目录打开句柄
+MOVEFILE_DELAY_UNTIL_REBOOT = 0x00000004  # MoveFileExW 标志：重启时删除
+ERROR_SHARING_VIOLATION = 32
 
 DOC_EXTS = {
     ".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf",
@@ -163,12 +168,50 @@ def _op_struct():
     return SHFILEOPSTRUCTW()
 
 
-def send_to_recycle_bin(paths: Iterable[str], progress=None,
-                        cancel=None) -> tuple[int, list[str]]:
-    """将文件/目录送入系统回收站，可还原。返回 (成功数, 失败列表)。
+def is_file_locked(path: str) -> bool:
+    """探测文件/目录是否被其他进程占用（无法以 DELETE 权限独占打开）。
 
-    progress(current, total, path, ok) 可选回调，用于实时显示删除进度。
+    返回 True 时该文件在当前会话几乎不可能删除（SHFileOperation / os.remove
+    都会因 sharing violation 失败），适合改走「重启后删除」。
+    """
+    try:
+        k32 = ctypes.windll.kernel32
+        k32.CreateFileW.restype = wintypes.HANDLE
+        flags = FILE_FLAG_BACKUP_SEMANTICS if os.path.isdir(path) else 0
+        handle = k32.CreateFileW(str(path), DELETE_ACCESS, 0, None, 3, flags, None)
+        if handle == wintypes.HANDLE(-1).value:
+            return k32.GetLastError() == ERROR_SHARING_VIOLATION
+        k32.CloseHandle(handle)
+        return False
+    except Exception:
+        return False
+
+
+def schedule_delete_on_reboot(path: str) -> bool:
+    """把路径登记到 Windows「重启时删除」队列，返回是否登记成功。
+
+    调用 MoveFileExW(path, None, MOVEFILE_DELAY_UNTIL_REBOOT)。需管理员权限；
+    登记成功意味着下次重启后该文件/目录会被系统自动清除，本次会话仍可见。
+    """
+    try:
+        k32 = ctypes.windll.kernel32
+        buf = ctypes.create_unicode_buffer(os.path.abspath(path))
+        return bool(k32.MoveFileExW(buf, None, MOVEFILE_DELAY_UNTIL_REBOOT))
+    except Exception:
+        return False
+
+
+def send_to_recycle_bin(paths: Iterable[str], progress=None, cancel=None,
+                        reboot_on_locked: bool = False) -> tuple[int, list[str], int]:
+    """将文件/目录送入系统回收站，可还原。返回 (成功数, 失败列表, 重启清理数)。
+
+    progress(current, total, path, status) 可选回调，status ∈ {True, False, "reboot"}：
+    True=已入回收站；"reboot"=被占用但已登记重启清理；False=确实失败。
     cancel() 返回 True 时提前停止，未处理项不计入失败。
+
+    reboot_on_locked=True 时，删除失败且确认被占用的项会改走 Windows「重启后删除」
+    队列（管理员权限下登记到 PendingFileRenameOperations），避免把被系统进程独占
+    的临时文件误报为清理失败；登记成功计为第三种成功状态。
 
     关键点：Shell32.SHFileOperationW 的 pFrom 是「双 NUL 结尾」的宽字符串，
     Python 3 的 c_wchar_p 字段赋值会拒绝内嵌 NUL（ValueError: embedded null
@@ -185,8 +228,8 @@ def send_to_recycle_bin(paths: Iterable[str], progress=None,
             pass
     total = len(valid)
     if not valid:
-        return 0, []
-    ok_count, failed = 0, []
+        return 0, [], 0
+    ok_count, failed, reboot_count = 0, [], 0
     # 逐个删除：既能汇报实时进度，也避免超长双 NUL 缓冲区与单次失败拖垮整批。
     for idx, p in enumerate(valid, 1):
         if cancel and cancel():
@@ -204,23 +247,30 @@ def send_to_recycle_bin(paths: Iterable[str], progress=None,
         except Exception:
             pass
         success = ret == 0 and not op.fAnyOperationsAborted
+        status = True if success else False
         if success:
             ok_count += 1
+        elif reboot_on_locked and is_file_locked(p) and schedule_delete_on_reboot(p):
+            reboot_count += 1
+            status = "reboot"
         else:
             failed.append(p)
         if progress:
             try:
-                progress(idx, total, p, success)
+                progress(idx, total, p, status)
             except Exception:
                 pass
-    return ok_count, failed
+    return ok_count, failed, reboot_count
 
 
-def delete_permanent(paths: Iterable[str], progress=None,
-                     cancel=None) -> tuple[int, list[str]]:
-    """永久删除（不进回收站），用于回收站等已在回收站中的文件。"""
+def delete_permanent(paths: Iterable[str], progress=None, cancel=None,
+                     reboot_on_locked: bool = False) -> tuple[int, list[str], int]:
+    """永久删除（不进回收站），用于回收站等已在回收站中的文件。
+
+    返回 (成功数, 失败列表, 重启清理数)；progress 状态语义同 send_to_recycle_bin。
+    """
     import shutil
-    ok_count, failed = 0, []
+    ok_count, failed, reboot_count = 0, [], 0
     valid = []
     for p in paths:
         try:
@@ -243,16 +293,20 @@ def delete_permanent(paths: Iterable[str], progress=None,
                 done = True
         except OSError:
             done = False
+        status = True if done else False
         if done:
             ok_count += 1
+        elif reboot_on_locked and is_file_locked(p) and schedule_delete_on_reboot(p):
+            reboot_count += 1
+            status = "reboot"
         else:
             failed.append(p)
         if progress:
             try:
-                progress(idx, total, p, done)
+                progress(idx, total, p, status)
             except Exception:
                 pass
-    return ok_count, failed
+    return ok_count, failed, reboot_count
 
 
 def unique_dest(src: str, dest_root: str, rel_base: str = "") -> str:
