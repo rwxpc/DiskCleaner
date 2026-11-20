@@ -1,8 +1,8 @@
 # -*- coding: utf-8 -*-
 """「常规清理」与「扫描大文件」的扫描实现。
 
-「常规清理」严格只扫描设计稿列出的 7 类：用户临时文件、Gradle 缓存、系统临时文件、
-pip 缓存、npm 缓存、Chrome 缓存、回收站（顺序与图2一致）。
+「常规清理」严格只扫描 6 类系统缓存/临时文件：用户临时文件、Gradle 缓存、
+系统临时文件、pip 缓存、npm 缓存、Chrome 缓存（不含回收站，顺序与图2一致）。
 """
 from __future__ import annotations
 import os
@@ -25,7 +25,7 @@ def _windir() -> str:
     return os.environ.get("WINDIR", r"C:\Windows")
 
 
-# 7 类定义：(名称, 目录候选, 风险, 默认勾选, 说明)
+# 6 类定义：(名称, 目录候选, 风险, 默认勾选, 说明)
 JUNK_CATEGORIES = [
     ("用户临时文件", lambda: [
         os.path.join(_local(), "Temp"),
@@ -66,35 +66,11 @@ def _unique_dirs(paths) -> list[str]:
     return out
 
 
-def _recycle_stats(drives, cancel) -> tuple[int, int, list[str]]:
-    """统计各磁盘回收站 $Recycle.Bin 占用，返回 (大小, 文件数, 文件列表)。"""
-    total = count = 0
-    files: list[str] = []
-    for drive in drives:
-        if cancel():
-            break
-        root = os.path.join(drive, "$Recycle.Bin")
-        if not os.path.isdir(root):
-            continue
-        try:
-            for cur, dirs, fs in os.walk(root, topdown=True, followlinks=False):
-                if cancel():
-                    break
-                for name in fs:
-                    fp = os.path.join(cur, name)
-                    try:
-                        total += os.path.getsize(fp)
-                        count += 1
-                        files.append(fp)
-                    except OSError:
-                        pass
-        except OSError:
-            pass
-    return total, count, files
-
-
 def scan_junk(drives, cancel, progress=None) -> list[ScanItem]:
-    """按固定 7 类聚合全盘垃圾扫描结果（顺序与图2一致）。"""
+    """按固定 6 类聚合系统缓存/临时文件扫描结果（不含回收站）。
+
+    drives 参数保留以兼容调用方（常规清理入口与 /scan 报告）。
+    """
     items: list[ScanItem] = []
     for name, dirs_fn, risk, default_checked, note in JUNK_CATEGORIES:
         if cancel():
@@ -126,16 +102,6 @@ def scan_junk(drives, cancel, progress=None) -> list[ScanItem]:
             note=note, files=files, risk=risk,
         ))
 
-    # 回收站：高风险、默认不勾选；其中文件已在回收站，清理时需永久删除
-    if progress:
-        progress("正在统计：回收站")
-    size, count, files = _recycle_stats(drives, cancel)
-    items.append(ScanItem(
-        path="", name="回收站", category="垃圾文件", size=size,
-        file_count=count, default_checked=False,
-        note="回收站中的已删除文件，清理后永久删除、无法还原（高风险）",
-        files=files, risk="高风险", no_recycle=True,
-    ))
     return items
 
 

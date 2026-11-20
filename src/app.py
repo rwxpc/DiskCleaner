@@ -43,9 +43,9 @@ NAV = [
 ]
 
 PAGE_META = {
-    "checkup": ("常规清理", "全盘扫描 7 类系统垃圾：用户临时文件、Gradle 缓存、系统临时文件、"
-                "pip 缓存、npm 缓存、Chrome 缓存、回收站。",
-                "先扫描，再按风险勾选清理；各专清模块互不干扰。除回收站外均送入回收站，可随时还原。"),
+    "checkup": ("常规清理", "全盘扫描 6 类系统缓存/临时文件：用户临时文件、Gradle 缓存、"
+                "系统临时文件、pip 缓存、npm 缓存、Chrome 缓存（不含回收站）。",
+                "先扫描，再按风险勾选清理；各专清模块互不干扰。清理项一律送入回收站，可随时还原。"),
     "wechat": ("微信专清", "独立页面：按图片/视频/音频/文件/缓存/聊天记录展示；聊天记录只统计不清理。", ""),
     "wxwork": ("企业微信专清", "独立页面：按图片/视频/音频/文件/缓存/聊天记录展示；聊天记录只统计不清理。", ""),
     "wps": ("WPS缓存专清", "枚举 Kingsoft 缓存目录，重点标注本地备份与云同步缓存；清理前可转存文档。", ""),
@@ -695,8 +695,8 @@ class App:
     def _build_scan_page(self, key):
         page = self.pages[key]["frame"]
         self._page_header(key)
-        # 「扫描大文件」的扫描按钮放在筛选栏（下拉菜单式），其余页沿用统一头部按钮组
-        self._header_actions(key, None if key == "large" else lambda: self.start_scan(key))
+        # 所有功能页（含「扫描大文件」）沿用完全一致的头部按钮组
+        self._header_actions(key, lambda: self.start_scan(key))
 
         # 工具栏（磁盘/大小/时间范围等筛选项）
         bar = tk.Frame(page, bg=C["page_bg"])
@@ -724,20 +724,11 @@ class App:
             self.pages[key]["drive_var"] = dv
             self.pages[key]["drive_labels"] = mapping
             self.pages[key]["all_drives"] = drives
-            self.pages[key]["pause"] = threading.Event()
-            # 主操作按钮与「暂停 / 继续」，放在两个下拉之间（与参考图一致）
-            flat_btn(bar, "扫描大文件", lambda: self.start_scan(key),
-                     bg=C["primary"], fg=C["white"],
-                     padx=18, pady=6).pack(side="left", padx=(16, 6))
-            pause_btn = flat_btn(bar, "暂停", lambda: self._toggle_pause(key),
-                                 bg=C["neutral_bg"], fg=C["text"],
-                                 active_bg=C["neutral_hover"],
-                                 padx=14, pady=6)
-            pause_btn.pack(side="left", padx=(0, 16))
-            self.pages[key]["pause_btn"] = pause_btn
             # 文件大小：下拉菜单式，6 档固定阈值
+            # 扫描动作统一由头部「一键扫描」发起；筛选栏只保留两个下拉，
+            # 不再放置与头部重复的「扫描大文件」「暂停」按钮。
             tk.Label(bar, text="文件大小", bg=C["page_bg"], fg=C["text_sub"],
-                     font=F["body"]).pack(side="left", padx=(0, 6))
+                     font=F["body"]).pack(side="left", padx=(20, 6))
             sv = tk.StringVar(value="4G以上")
             ttk.Combobox(bar, textvariable=sv, values=SIZE_CHOICES,
                          state="readonly", width=12, font=F["body"]).pack(side="left")
@@ -897,22 +888,13 @@ class App:
             drives = (pg.get("selected_drives") or pg.get("all_drives")
                       or [d for d, _ in pg.get("drive_vars", [])])
             size = pg.get("size_mb", 4096)
-            pause = pg.get("pause")
-
-            def scan_with_pause(cancel, progress):
-                def cancel_wait():
-                    # 暂停时阻塞扫描线程（每 0.1s 检查一次），取消则立即退出
-                    while pause is not None and pause.is_set() and not cancel():
-                        time.sleep(0.1)
-                    return cancel()
-                return disktools.scan_large_files(drives, size, cancel_wait, progress)
-
-            return scan_with_pause
+            return lambda cancel, progress: disktools.scan_large_files(
+                drives, size, cancel, progress)
         return SCAN_FN[key]
 
     # 各扫描入口的预计阶段数（用于弹窗 i/total；仅影响展示，不影响扫描范围）
     SCAN_TOTAL = {
-        "checkup": 7, "wechat": 7, "wxwork": 7, "wps": 8, "large": 4,
+        "checkup": 6, "wechat": 7, "wxwork": 7, "wps": 8, "large": 4,
     }
 
     def _scan_title(self, key):
@@ -937,10 +919,6 @@ class App:
         if key == "large":
             pg["selected_drives"] = self._selected_drives(key)
             pg["size_mb"] = SIZE_MB_MAP.get(self.pages[key]["size_var"].get(), 4096)
-            if "pause" in pg:
-                pg["pause"].clear()
-            if "pause_btn" in pg:
-                pg["pause_btn"].configure(text="暂停")
         dlg = ScanProgressDialog(
             self.root, self._scan_title(key), self.SCAN_TOTAL.get(key, 7),
             cancel_callback=lambda: pg["cancel"].set())
@@ -949,7 +927,7 @@ class App:
         threading.Thread(target=self._worker, args=(key,), daemon=True).start()
 
     def start_checkup(self):
-        """一键全盘扫描 7 类垃圾，汇总到常规清理表格（不含其他专清模块）。"""
+        """一键全盘扫描 6 类垃圾，汇总到常规清理表格（不含其他专清模块）。"""
         pg = self.pages["checkup"]
         pg["cancel"].clear()
         pg["scanning"] = True
@@ -957,18 +935,18 @@ class App:
             pg["tree"].delete(iid)
         pg["items"].clear()
         pg["checked"].clear()
-        self.checkup_tip.configure(text="正在全盘扫描 7 类垃圾，请稍候…", fg=C["warning"])
+        self.checkup_tip.configure(text="正在全盘扫描 6 类垃圾，请稍候…", fg=C["warning"])
         # 主线程先读取 Tk 变量
         pg["selected_drives"] = self._selected_drives("checkup")
         dlg = ScanProgressDialog(
             self.root, self._scan_title("checkup"), self.SCAN_TOTAL["checkup"],
             cancel_callback=lambda: pg["cancel"].set())
         pg["scan_dialog"] = dlg
-        self.log("常规清理：开始全盘扫描（7 类垃圾）")
+        self.log("常规清理：开始全盘扫描（6 类垃圾）")
         threading.Thread(target=self._checkup_worker, daemon=True).start()
 
     def _checkup_worker(self):
-        """仅扫描图2列出的 7 类垃圾；不触碰微信/企业微信/WPS/扫描大文件等专清模块。"""
+        """仅扫描图2列出的 6 类垃圾；不触碰微信/企业微信/WPS/扫描大文件等专清模块。"""
         pg = self.pages["checkup"]
         cancel = lambda: pg["cancel"].is_set()
 
@@ -1292,21 +1270,6 @@ class App:
             except Exception:
                 pass
 
-    def _toggle_pause(self, key):
-        """「暂停 / 继续」：暂停时扫描线程在下一次 cancel 检查处挂起。"""
-        pg = self.pages[key]
-        ev = pg.get("pause")
-        if not ev:
-            return
-        if ev.is_set():
-            ev.clear()
-            pg["pause_btn"].configure(text="暂停")
-            pg["status"].configure(text="继续扫描…")
-        else:
-            ev.set()
-            pg["pause_btn"].configure(text="继续")
-            pg["status"].configure(text="已暂停，点「继续」恢复扫描")
-
     def _selected_drives(self, key):
         pg = self.pages[key]
         if key == "large" and "drive_labels" in pg:
@@ -1416,7 +1379,7 @@ class App:
             return
         total = sum(i.size for i in chosen)
         perm = sum(1 for i in chosen if getattr(i, "no_recycle", False))
-        note = ("\n其中「回收站」项将被永久删除、无法还原。" if perm else
+        note = ("\n其中部分项目将被永久删除、无法还原。" if perm else
                 "\n文件将送入系统回收站（可还原）。")
         if skipped:
             note += f"\n已跳过 {len(skipped)} 个「只统计不清理」项目。"
