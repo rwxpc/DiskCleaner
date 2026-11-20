@@ -522,7 +522,7 @@ class App:
         return right
 
     def _make_detail_panel(self, work, key):
-        """右侧「项目详情」面板：内容区可滚动、底部两个按钮固定不随滚动。
+        """右侧「项目详情」面板：内容区可滚动、底部单个按钮固定不随滚动。
 
         结构：detail(卡片) → actions(贴底) + scroller(可滚动内容区)
         scroller 内用 Canvas + 内部 Frame 承载全部文本，滚轮递归绑定到所有子控件。
@@ -535,16 +535,13 @@ class App:
         actions = tk.Frame(detail, bg=C["card"])
         actions.pack(side="bottom", fill="x", padx=12, pady=(4, 8))
 
+        # v1.7.1：「位置」目录已支持点击直接打开，底部「打开所在文件夹」
+        # 按钮功能重复，予以移除；底部仅保留选择/取消选择按钮。
         dtoggle = RoundButton(actions, "选择此项",
                               lambda k=key: self._toggle_detail_item(k),
                               variant="soft")
-        dtoggle.pack(fill="x", pady=(0, 6), ipady=0)
+        dtoggle.pack(fill="x", ipady=0)
         dtoggle.configure(state="disabled")
-        dopen = RoundButton(actions, "打开所在文件夹",
-                            lambda k=key: self._open_detail_folder(k),
-                            variant="ghost", folder_icon=True)
-        dopen.pack(fill="x")
-        dopen.configure(state="disabled")
 
         # ---- 可滚动内容区 ----
         scroller = tk.Frame(detail, bg=C["card"])
@@ -636,7 +633,7 @@ class App:
 
         return dict(detail=detail, dsel=dsel, dpill=dpill, dsize=dsize,
                     dconseq=dconseq, dadvice=dadvice, dpath=dpath,
-                    dtoggle=dtoggle, dopen=dopen,
+                    dtoggle=dtoggle,
                     detail_canvas=canvas, detail_scrollbar=vbar,
                     detail_inner=inner, detail_iid=None, detail_WL=WL)
 
@@ -1294,21 +1291,6 @@ class App:
         self._update_selected(key)
         self._show_detail(key, iid)
 
-    def _open_detail_folder(self, key):
-        """详情面板底部按钮：在资源管理器中打开项目所在文件夹。"""
-        pg = self.pages[key]
-        it = pg["items"].get(pg.get("detail_iid"))
-        if not it:
-            return
-        target = it.path or (it.files[0] if it.files else "")
-        if not target:
-            return
-        folder = target if os.path.isdir(target) else os.path.dirname(target)
-        try:
-            os.startfile(folder)
-        except Exception:
-            pass
-
     @staticmethod
     def _consequence(it):
         """优先使用扫描项自带的逐项文案，否则按类型推断（兼容其他模块）。"""
@@ -1442,7 +1424,6 @@ class App:
         pg["dadvice"].configure(text="—")
         self._set_locations(pg, [], "")
         pg["dtoggle"].configure(text="选择此项", state="disabled")
-        pg["dopen"].configure(state="disabled")
         self._refresh_detail_scroll(pg)
 
     def _refresh_detail_scroll(self, pg):
@@ -1469,7 +1450,6 @@ class App:
         pg["dsize"].configure(text=human_size(it.size))
         pg["dtoggle"].configure(
             state="disabled" if getattr(it, "no_clean", False) else "normal")
-        pg["dopen"].configure(state="normal")
         self._draw_pill(pg["dpill"], risk)
         conseq, advice = self._consequence(it)
         pg["dconseq"].configure(text=conseq, fg=C["text_sub"])

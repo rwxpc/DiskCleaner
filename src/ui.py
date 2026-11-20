@@ -4,7 +4,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-VERSION = "1.7.0"  # 版本号单一来源，app.py 与侧栏共用
+VERSION = "1.7.1"  # 版本号单一来源，app.py 与侧栏共用
 
 # ---------- 配色 ----------
 # 主题「精密仪器」：深墨蓝控制台侧栏 + 冷白数据区（自 v1.2.0 沿用至今）。
@@ -150,7 +150,7 @@ class RoundButton(tk.Canvas):
             self._bg, self._bg_h = "#EEF3FC", "#E2EBFA"
             self._fg = "#33415C"
             self._border, self._border_h = "#D6E2F5", "#BDCFE9"
-        else:                        # 白底灰字（打开所在文件夹）
+        else:                        # 白底灰字（次要按钮样式，组件库保留）
             self._bg, self._bg_h = C["card"], "#F5F8FD"
             self._fg = "#3B4963"
             self._border, self._border_h = C["border"], "#C4D2E8"
