@@ -20,7 +20,7 @@ import wps
 import disktools
 from ui import (
     C, F, VERSION, NAV_ICONS, setup_styles, flat_btn, ghost_btn, card_frame,
-    risk_pill, Sidebar, StatCard, SweepCanvas, MagnifierCanvas,
+    RoundButton, risk_pill, Sidebar, StatCard, SweepCanvas, MagnifierCanvas,
 )
 
 APP_NAME = "DiskCleaner"
@@ -506,12 +506,14 @@ class App:
         actions = tk.Frame(detail, bg=C["card"])
         actions.pack(side="bottom", fill="x", padx=18, pady=(6, 12))
 
-        dtoggle = ghost_btn(actions, "选择此项",
-                            lambda k=key: self._toggle_detail_item(k))
-        dtoggle.pack(fill="x", pady=(0, 6))
+        dtoggle = RoundButton(actions, "选择此项",
+                              lambda k=key: self._toggle_detail_item(k),
+                              variant="soft")
+        dtoggle.pack(fill="x", pady=(0, 8), ipady=0)
         dtoggle.configure(state="disabled")
-        dopen = ghost_btn(actions, "📁 打开所在文件夹",
-                          lambda k=key: self._open_detail_folder(k))
+        dopen = RoundButton(actions, "打开所在文件夹",
+                            lambda k=key: self._open_detail_folder(k),
+                            variant="ghost", folder_icon=True)
         dopen.pack(fill="x")
         dopen.configure(state="disabled")
 

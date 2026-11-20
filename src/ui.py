@@ -4,7 +4,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-VERSION = "1.3.1"  # 版本号单一来源，app.py 与侧栏共用
+VERSION = "1.3.2"  # 版本号单一来源，app.py 与侧栏共用
 
 # ---------- 配色 ----------
 # 主题「精密仪器」：深墨蓝控制台侧栏 + 冷白数据区（自 v1.2.0 沿用至今）。
@@ -125,6 +125,112 @@ def card_frame(parent, **kw):
     f = tk.Frame(parent, bg=C["card"], highlightbackground=C["border"],
                  highlightthickness=1, **kw)
     return f
+
+
+class RoundButton(tk.Canvas):
+    """自绘圆角按钮（参考图样式）：浅色底 + 描边 + 居中文字，可选左侧线框文件夹图标。
+
+    用 Canvas 画圆角矩形，规避 tk.Button 在 Windows 上的直角外观。
+    保持与 ghost_btn 兼容的调用方式：configure(text=..., state=...) / cget("text")。
+    """
+
+    def __init__(self, parent, text, command, *, variant="ghost",
+                 folder_icon=False, height=34, font=None, width=200):
+        self._variant = variant
+        self._folder = folder_icon
+        self._text = text
+        self._command = command
+        self._state = "normal"
+        self._hover = False
+        self._font = font or F["body"]
+        if variant == "soft":       # 淡蓝底深蓝灰字（选择/取消选择）
+            self._bg, self._bg_h = "#EEF3FC", "#E2EBFA"
+            self._fg = "#33415C"
+            self._border, self._border_h = "#D6E2F5", "#BDCFE9"
+        else:                        # 白底灰字（打开所在文件夹）
+            self._bg, self._bg_h = C["card"], "#F5F8FD"
+            self._fg = "#3B4963"
+            self._border, self._border_h = C["border"], "#C4D2E8"
+        self._disabled_bg = "#F3F5F9"
+        self._disabled_fg = C["text_mute"]
+        self._disabled_border = "#E5E9F0"
+        tk.Canvas.__init__(self, parent, width=width, height=height,
+                           bg=parent.cget("bg"), highlightthickness=0, bd=0,
+                           cursor="hand2")
+        self.bind("<Enter>", self._on_enter)
+        self.bind("<Leave>", self._on_leave)
+        self.bind("<Button-1>", self._on_click)
+        self.bind("<Configure>", lambda e: self._redraw())
+
+    # ---- 与 tk.Button 兼容的接口 ----
+    def configure(self, **kw):
+        if "text" in kw:
+            self._text = kw.pop("text")
+        if "state" in kw:
+            self._state = kw.pop("state")
+        if kw:
+            tk.Canvas.configure(self, **kw)
+        self._redraw()
+
+    def cget(self, key):
+        if key == "text":
+            return self._text
+        if key == "state":
+            return self._state
+        return tk.Canvas.cget(self, key)
+
+    def _on_enter(self, _e):
+        if self._state == "normal":
+            self._hover = True
+            self._redraw()
+
+    def _on_leave(self, _e):
+        self._hover = False
+        self._redraw()
+
+    def _on_click(self, _e):
+        if self._state == "normal" and self._command:
+            self._command()
+
+    def _round_rect(self, x1, y1, x2, y2, r, fill, outline):
+        pts = [x1+r, y1, x2-r, y1, x2, y1, x2, y1+r,
+               x2, y2-r, x2, y2, x2-r, y2, x1+r, y2,
+               x1, y2, x1, y2-r, x1, y1+r, x1, y1]
+        self.create_polygon(pts, smooth=True, fill=fill, outline=outline, width=1)
+
+    def _redraw(self):
+        self.delete("all")
+        w, h = self.winfo_width(), self.winfo_height()
+        if w <= 2 or h <= 2:
+            return
+        if self._state == "disabled":
+            bg, fg, border = (self._disabled_bg, self._disabled_fg,
+                              self._disabled_border)
+        elif self._hover:
+            bg, fg, border = (self._bg_h, self._fg, self._border_h)
+        else:
+            bg, fg, border = (self._bg, self._fg, self._border)
+        self._round_rect(2, 2, w - 2, h - 2, 8, bg, border)
+        # 量文字宽度，图标与文字整体水平居中
+        tmp = self.create_text(-999, -999, text=self._text, font=self._font)
+        bx = self.bbox(tmp)
+        self.delete(tmp)
+        tw = (bx[2] - bx[0]) if bx else 0
+        icon_w = 20 if self._folder else 0
+        total = icon_w + tw
+        left = (w - total) / 2.0
+        cy = h / 2.0
+        if self._folder:
+            x = left + 1
+            # 线框文件夹图标：左上凸耳 + 主体（与参考图一致）
+            self.create_line(x, cy - 6, x + 6, cy - 6, fill=fg, width=1)
+            self.create_polygon(
+                [x, cy - 6, x + 6, cy - 6, x + 8, cy - 4, x + 16, cy - 4,
+                 x + 16, cy - 4, x + 16, cy + 6, x + 16, cy + 6,
+                 x, cy + 6, x, cy + 6, x, cy - 6],
+                outline=fg, fill="", width=1, smooth=False)
+        self.create_text(left + icon_w, cy + 1, text=self._text, font=self._font,
+                         fill=fg, anchor="w")
 
 
 def risk_pill(parent, text, level):

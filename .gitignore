@@ -13,6 +13,7 @@ src/DiskCleaner_debug.spec
 src/v12_*.png
 src/v13_*.png
 src/v131_*.png
+src/v132_*.png
 src/DiskCleaner_扫描报告_*.txt
 *.log
 *.tmp
