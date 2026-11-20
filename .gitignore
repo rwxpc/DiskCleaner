@@ -11,12 +11,14 @@ dist/
 # ---- 临时 / 调试产物 ----
 src/DiskCleaner_debug.spec
 src/v12_*.png
+src/v13_*.png
 src/DiskCleaner_扫描报告_*.txt
 *.log
 *.tmp
 
 # ---- 本地副本与第三方原程序（不纳入版本库）----
 DiskCleaner - 副本.exe
+磁盘清理小助手*.exe
 电脑C盘清理工具DiskMate.exe
 
 # ---- WorkBuddy 本地工作区数据（含会话记忆，不公开）----

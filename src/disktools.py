@@ -28,9 +28,8 @@ def _windir() -> str:
 # 7 类定义：(名称, 目录候选, 风险, 默认勾选, 说明)
 JUNK_CATEGORIES = [
     ("用户临时文件", lambda: [
-        os.environ.get("TEMP", ""), os.environ.get("TMP", ""),
         os.path.join(_local(), "Temp"),
-    ], "低风险", True, "当前用户运行产生的临时文件，可安全清理"),
+    ], "低风险", True, "当前登录用户 Temp 文件夹中的临时文件，可安全清理"),
     ("Gradle 缓存", lambda: [
         os.path.join(_home(), ".gradle", "caches"),
         os.path.join(_home(), ".gradle", "daemon"),
@@ -104,16 +103,26 @@ def scan_junk(drives, cancel, progress=None) -> list[ScanItem]:
             progress(f"正在统计：{name}")
         size = count = 0
         files: list[str] = []
-        for d in _unique_dirs(dirs_fn()):
+        dirs = _unique_dirs(dirs_fn())
+        for d in dirs:
             if cancel():
                 break
             s, c = path_stats(d, cancel)
             size += s
             count += c
-            files.append(d)  # 保留目录本身，整体送入回收站更快
+            if name == "用户临时文件":
+                # 只清理 Temp 文件夹「内容」，保留 Temp 目录本身，
+                # 避免把当前登录用户的关键临时目录整个送进回收站。
+                try:
+                    children = [os.path.join(d, e) for e in os.listdir(d)]
+                except OSError:
+                    children = []
+                files.extend(children or [d])
+            else:
+                files.append(d)  # 其余类别按目录整体送入回收站更快
         items.append(ScanItem(
-            path="", name=name, category="垃圾文件", size=size,
-            file_count=count, default_checked=default_checked,
+            path=dirs[0] if dirs else "", name=name, category="垃圾文件",
+            size=size, file_count=count, default_checked=default_checked,
             note=note, files=files, risk=risk,
         ))
 

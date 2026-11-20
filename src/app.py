@@ -5,6 +5,7 @@ import os
 import sys
 import time
 import queue
+import shutil
 import threading
 import tkinter as tk
 from tkinter import ttk, filedialog, messagebox
@@ -19,11 +20,15 @@ import wps
 import disktools
 from ui import (
     C, F, VERSION, NAV_ICONS, setup_styles, flat_btn, ghost_btn, card_frame,
-    risk_pill, Sidebar, StatCard,
+    risk_pill, Sidebar, StatCard, SweepCanvas, MagnifierCanvas,
 )
 
 APP_NAME = "DiskCleaner"
 AGE_MAP = {"全部": 0, "30天前": 30, "90天前": 90, "180天前": 180}
+# 「扫描大文件」下拉选项：显示文案 -> 阈值(MB)
+SIZE_CHOICES = ["100M以上", "200M以上", "500M以上", "1G以上", "2G以上", "4G以上"]
+SIZE_MB_MAP = {"100M以上": 100, "200M以上": 200, "500M以上": 500,
+               "1G以上": 1024, "2G以上": 2048, "4G以上": 4096}
 COPYRIGHT = ["开发者：任我行电脑工作室", "微信号：RWXPC8"]
 WPS_TRANSFER_DIR = r"D:\wps转存"  # WPS 文档默认转存位置
 
@@ -101,7 +106,6 @@ class ScanProgressDialog:
         self.cancel_callback = cancel_callback
         self.closed = False
         self.q = queue.Queue()
-        self.spin_angle = 0
 
         self.top = tk.Toplevel(parent)
         self.top.title("正在扫描")
@@ -114,12 +118,9 @@ class ScanProgressDialog:
                        highlightthickness=1)
         box.pack(padx=16, pady=16, fill="both", expand=True)
 
-        # 环形加载动画
-        self.spin = tk.Canvas(box, width=48, height=48, bg=C["card"],
-                              highlightthickness=0)
-        self.spin.pack(pady=(18, 6))
-        self.arc = self.spin.create_arc(6, 6, 42, 42, start=0, extent=70,
-                                        style="arc", width=4, outline=C["primary"])
+        # 运动放大镜动画（镜片沿文件带移动，扫过的文件块被放大高亮）
+        self.mag = MagnifierCanvas(box, width=430, height=78)
+        self.mag.pack(pady=(16, 6))
 
         self.title_var = tk.StringVar(value=title)
         tk.Label(box, textvariable=self.title_var, bg=C["card"], fg=C["text"],
@@ -145,12 +146,11 @@ class ScanProgressDialog:
         self.top.update_idletasks()
         try:
             px = parent.winfo_rootx() + (parent.winfo_width() - 500) // 2
-            py = parent.winfo_rooty() + (parent.winfo_height() - 285) // 2
-            self.top.geometry(f"500x285+{max(px, 0)}+{max(py, 0)}")
+            py = parent.winfo_rooty() + (parent.winfo_height() - 320) // 2
+            self.top.geometry(f"500x320+{max(px, 0)}+{max(py, 0)}")
         except Exception:
-            self.top.geometry("500x285")
+            self.top.geometry("500x320")
 
-        self._spin_loop()
         self._poll()
 
     # --- 线程安全接口（供扫描 worker 调用）---
@@ -172,16 +172,6 @@ class ScanProgressDialog:
             self.sub_var.set("正在取消扫描…")
             self.finish()
 
-    def _spin_loop(self):
-        if self.closed:
-            return
-        self.spin_angle = (self.spin_angle + 18) % 360
-        try:
-            self.spin.itemconfig(self.arc, start=self.spin_angle)
-        except Exception:
-            pass
-        self.top.after(60, self._spin_loop)
-
     def _poll(self):
         if self.closed:
             return
@@ -195,8 +185,10 @@ class ScanProgressDialog:
                         self.current += 1
                         self.pb["value"] = self.current
                         self.count_var.set(f"{self.current} / {self.total}")
+                    self.mag.set_progress(self.current / self.total)
                 elif kind == "finish":
-                    self._close()
+                    self.mag.finish()
+                    self.top.after(320, self._close)
                     return
         except queue.Empty:
             pass
@@ -204,6 +196,7 @@ class ScanProgressDialog:
 
     def _close(self):
         self.closed = True
+        self.mag.stop()
         try:
             self.top.destroy()
         except Exception:
@@ -234,6 +227,9 @@ class DeleteProgressDialog:
 
         tk.Label(box, text="正在清理并送入回收站…", bg=C["card"], fg=C["text"],
                  font=F["title"]).pack(anchor="w", padx=18, pady=(16, 4))
+        # 动态扫地效果：扫把随真实清理进度推进，碎屑被扫入右侧回收桶
+        self.sweep = SweepCanvas(box, width=430, height=78)
+        self.sweep.pack(padx=18, pady=(0, 10))
         self.file_var = tk.StringVar(value="准备中…")
         tk.Label(box, textvariable=self.file_var, bg=C["card"], fg=C["primary"],
                  font=F["body_bold"], anchor="w", wraplength=440,
@@ -259,10 +255,10 @@ class DeleteProgressDialog:
         self.top.update_idletasks()
         try:
             px = parent.winfo_rootx() + (parent.winfo_width() - 500) // 2
-            py = parent.winfo_rooty() + (parent.winfo_height() - 255) // 2
-            self.top.geometry(f"500x255+{max(px, 0)}+{max(py, 0)}")
+            py = parent.winfo_rooty() + (parent.winfo_height() - 350) // 2
+            self.top.geometry(f"500x350+{max(px, 0)}+{max(py, 0)}")
         except Exception:
-            self.top.geometry("500x255")
+            self.top.geometry("500x350")
         self.top.after(80, self._poll)
 
     def start(self, items, days, collect_fn):
@@ -322,6 +318,7 @@ class DeleteProgressDialog:
                 if kind == "collected":
                     targets = payload
                     self.total = len(targets)
+                    self.sweep.set_progress(0)
                     self.pb.stop()
                     self.pb.configure(mode="determinate", maximum=max(self.total, 1), value=0)
                     self.stat_var.set(f"0 / {self.total}")
@@ -335,6 +332,7 @@ class DeleteProgressDialog:
                         self.failed.append(path)
                     self.file_var.set(os.path.basename(path))
                     self.pb["value"] = i
+                    self.sweep.set_progress(i / max(t, 1))
                     self.stat_var.set(f"{i} / {t}")
                     self.detail_var.set(f"成功 {self.ok_count}  失败 {len(self.failed)}")
                     try:
@@ -346,13 +344,15 @@ class DeleteProgressDialog:
                     self.file_var.set("清理完成" if kind == "done" else "清理出错")
                     self.detail_var.set(f"成功 {ok_count}  失败 {len(failed)}")
                     self.pb["value"] = self.pb["maximum"]
-                    self.top.after(400, lambda: self._finish(ok_count, failed))
+                    self.sweep.finish()
+                    self.top.after(700, lambda: self._finish(ok_count, failed))
                     return
         except queue.Empty:
             pass
         self.top.after(80, self._poll)
 
     def _finish(self, ok_count, failed):
+        self.sweep.stop()
         try:
             self.top.destroy()
         except Exception:
@@ -481,8 +481,9 @@ class App:
         使用相同字体、配色、内边距与 pack 间距，保证各页布局层级一致。
         """
         right = self.pages[key]["header_right"]
-        flat_btn(right, "一键扫描", scan_command,
-                 bg=C["primary"], fg=C["white"]).pack(side="right", padx=6)
+        if scan_command is not None:
+            flat_btn(right, "一键扫描", scan_command,
+                     bg=C["primary"], fg=C["white"]).pack(side="right", padx=6)
         flat_btn(right, "清理选中项", lambda: self.clean_selected(key),
                  bg=C["danger"], fg=C["white"]).pack(side="right", padx=6)
         flat_btn(right, "全选", lambda: self.select_all(key, True),
@@ -490,6 +491,68 @@ class App:
         flat_btn(right, "取消全选", lambda: self.select_all(key, False),
                  bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"]).pack(side="right", padx=6)
         return right
+
+    def _make_detail_panel(self, work, key):
+        """右侧「项目详情」面板（参考设计稿）：标题 / 风险胶囊 + 大小 / 删除后果 /
+        建议 / 位置 / 两个操作按钮，全部随表格选中项动态变化。"""
+        detail = card_frame(work, width=280, height=560)
+        detail.pack(side="right", fill="y", padx=(12, 0))
+        detail.pack_propagate(False)  # 固定尺寸，避免空内容时塌成 1px 不可见
+
+        tk.Label(detail, text="项目详情", bg=C["card"], fg=C["text_mute"],
+                 font=F["small"]).pack(anchor="w", padx=18, pady=(16, 4))
+        dsel = tk.Label(detail, text="点击左侧项目查看详情", bg=C["card"],
+                        fg=C["text_mute"], font=F["body"], wraplength=244,
+                        justify="left")
+        dsel.pack(anchor="w", padx=18, pady=(0, 14))
+
+        meta = tk.Frame(detail, bg=C["card"])
+        meta.pack(anchor="w", padx=18, pady=(0, 12), fill="x")
+        dpill = tk.Canvas(meta, width=76, height=24, bg=C["card"],
+                          highlightthickness=0)
+        dpill.pack(side="left")
+        self._draw_pill(dpill, "低风险")
+        dsize = tk.Label(meta, text="—", bg=C["card"], fg=C["text"],
+                         font=F["card_value"])
+        dsize.pack(side="left", padx=(12, 0))
+
+        tk.Label(detail, text="删除后果", bg=C["card"], fg=C["text_mute"],
+                 font=F["small"]).pack(anchor="w", padx=18)
+        dconseq = tk.Label(detail, text="—", bg=C["card"], fg=C["text_sub"],
+                           font=F["body"], wraplength=244, justify="left")
+        dconseq.pack(anchor="w", padx=18, pady=(2, 10))
+
+        tk.Label(detail, text="建议", bg=C["card"], fg=C["text_mute"],
+                 font=F["small"]).pack(anchor="w", padx=18)
+        dadvice = tk.Label(detail, text="—", bg=C["card"], fg=C["text_sub"],
+                           font=F["body"], wraplength=244, justify="left")
+        dadvice.pack(anchor="w", padx=18, pady=(2, 10))
+
+        tk.Label(detail, text="位置", bg=C["card"], fg=C["text_mute"],
+                 font=F["small"]).pack(anchor="w", padx=18)
+        dpath = tk.Label(detail, text="—", bg=C["card"], fg=C["text_mute"],
+                         font=F["small"], wraplength=244, justify="left")
+        dpath.pack(anchor="w", padx=18, pady=(2, 8))
+
+        if key == "wps":
+            tk.Label(detail, text="长期方案：WPS → 备份中心 → 备份设置，"
+                     "将本地备份目录改到 D 盘，避免 C 盘被占满。",
+                     bg=C["tip_bg"], fg=C["tip_fg"], font=F["small"],
+                     wraplength=244, justify="left", padx=8, pady=5).pack(
+                         fill="x", padx=18, pady=(0, 8))
+
+        dtoggle = ghost_btn(detail, "选择此项",
+                            lambda k=key: self._toggle_detail_item(k))
+        dtoggle.pack(fill="x", padx=18, pady=(4, 3))
+        dtoggle.configure(state="disabled")
+        dopen = ghost_btn(detail, "打开所在文件夹",
+                          lambda k=key: self._open_detail_folder(k))
+        dopen.pack(fill="x", padx=18, pady=(0, 10))
+        dopen.configure(state="disabled")
+
+        return dict(detail=detail, dsel=dsel, dpill=dpill, dsize=dsize,
+                    dconseq=dconseq, dadvice=dadvice, dpath=dpath,
+                    dtoggle=dtoggle, dopen=dopen, detail_iid=None)
 
     def _build_checkup(self):
         page = self.pages["checkup"]["frame"]
@@ -528,24 +591,30 @@ class App:
             card = StatCard(stats, label, "0 B", "0 项", dot, width=196)
             card.pack(side="left", padx=(0, 10))
             self.stat_cards[key] = card
-        # 常规清理表格区（复用汇总）
-        body = card_frame(page)
-        body.pack(fill="both", expand=True, padx=26, pady=(0, 20))
-        cols = ("sel", "cat", "name", "size", "count", "path")
-        tree = ttk.Treeview(body, columns=cols, show="headings", height=18)
+        # 常规清理表格区 + 项目详情面板（与其他功能页完全一致）
+        work = tk.Frame(page, bg=C["page_bg"])
+        work.pack(fill="both", expand=True, padx=26, pady=(0, 20))
+        d = self._make_detail_panel(work, "checkup")  # 详情先占位，避免被表格挤掉
+        table_card = card_frame(work)
+        table_card.pack(side="left", fill="both", expand=True)
+        cols = ("sel", "name", "size", "risk")
+        tree = ttk.Treeview(table_card, columns=cols, show="headings", height=18)
         for col, text, width in (
-            ("sel", "选择", 48), ("cat", "来源", 120), ("name", "清理项", 250),
-            ("size", "大小", 100), ("count", "文件数", 80), ("path", "路径 / 说明", 430),
+            ("sel", "", 52), ("name", "清理项目", 230),
+            ("size", "大小 ▼", 110), ("risk", "风险", 100),
         ):
             tree.heading(col, text=text)
             tree.column(col, width=width, anchor="w")
-        vsb = ttk.Scrollbar(body, orient="vertical", command=tree.yview)
+        tree.heading("size", command=lambda: self._sort_by_size("checkup"))
+        vsb = ttk.Scrollbar(table_card, orient="vertical", command=tree.yview)
         tree.configure(yscrollcommand=vsb.set)
         tree.pack(side="left", fill="both", expand=True, padx=(1, 0), pady=1)
         vsb.pack(side="right", fill="y")
+        tree.bind("<Button-1>", lambda e, k="checkup": self._on_tree_click(k, e))
+        tree.bind("<<TreeviewSelect>>", lambda e, k="checkup": self._on_tree_select(k, e))
         self.pages["checkup"].update(
             built=True, tree=tree, items={}, checked={},
-            queue=queue.Queue(), cancel=threading.Event(), scanning=False,
+            queue=queue.Queue(), cancel=threading.Event(), scanning=False, **d,
         )
 
         # 头部工具按钮（统一样式，与其他页面一致）
@@ -554,36 +623,52 @@ class App:
     def _build_scan_page(self, key):
         page = self.pages[key]["frame"]
         self._page_header(key)
-        # 头部工具按钮：统一为与「常规清理」一致的 4 按钮组，移除「上次扫描」文本/进度条/重新扫描
-        self._header_actions(key, lambda: self.start_scan(key))
+        # 「扫描大文件」的扫描按钮放在筛选栏（下拉菜单式），其余页沿用统一头部按钮组
+        self._header_actions(key, None if key == "large" else lambda: self.start_scan(key))
 
         # 工具栏（磁盘/大小/时间范围等筛选项）
         bar = tk.Frame(page, bg=C["page_bg"])
         bar.pack(fill="x", padx=26, pady=(0, 8))
         if key == "large":
-            drive_frame = tk.Frame(bar, bg=C["page_bg"])
-            drive_frame.pack(side="left")
-            tk.Label(drive_frame, text="磁盘：", bg=C["page_bg"], fg=C["text_sub"],
-                     font=F["body"]).pack(side="left")
-            dvars = []
-            for d in get_fixed_drives():
-                v = tk.BooleanVar(value=True)
-                tk.Checkbutton(drive_frame, text=d, variable=v, bg=C["page_bg"],
-                               fg=C["text"], font=F["small"], activebackground=C["page_bg"],
-                               selectcolor=C["primary"]).pack(side="left", padx=2)
-                dvars.append((d, v))
-            self.pages[key]["drive_vars"] = dvars
-        if key == "large":
-            sf = tk.Frame(bar, bg=C["page_bg"])
-            sf.pack(side="left", padx=(14, 0))
-            tk.Label(sf, text="文件大小 ≥", bg=C["page_bg"], fg=C["text_sub"],
-                     font=F["body"]).pack(side="left")
-            sv = tk.DoubleVar(value=4096)
-            tk.Entry(sf, textvariable=sv, width=7, font=F["body"],
-                     relief="flat", highlightbackground=C["border"],
-                     highlightthickness=1).pack(side="left", padx=4)
-            tk.Label(sf, text="MB（默认 4096 = 4GB）", bg=C["page_bg"],
-                     fg=C["text_mute"], font=F["small"]).pack(side="left")
+            # 扫描范围：下拉菜单（盘符 + 可用空间），并保留「全部磁盘」
+            drives = get_fixed_drives()
+            labels, mapping = [], {}
+            for d in drives:
+                try:
+                    free = shutil.disk_usage(d).free / (1024 ** 3)
+                    label = "%s  可用 %.1f GB" % (d, free)
+                except Exception:
+                    label = d
+                labels.append(label)
+                mapping[label] = d
+            all_label = "全部磁盘"
+            labels.insert(0, all_label)
+            mapping[all_label] = "__ALL__"
+            dv = tk.StringVar(value=labels[1] if len(labels) > 1 else labels[0])
+            tk.Label(bar, text="扫描范围", bg=C["page_bg"], fg=C["text_sub"],
+                     font=F["body"]).pack(side="left", padx=(0, 6))
+            ttk.Combobox(bar, textvariable=dv, values=labels, state="readonly",
+                         width=20, font=F["body"]).pack(side="left")
+            self.pages[key]["drive_var"] = dv
+            self.pages[key]["drive_labels"] = mapping
+            self.pages[key]["all_drives"] = drives
+            self.pages[key]["pause"] = threading.Event()
+            # 主操作按钮与「暂停 / 继续」，放在两个下拉之间（与参考图一致）
+            flat_btn(bar, "扫描大文件", lambda: self.start_scan(key),
+                     bg=C["primary"], fg=C["white"],
+                     padx=18, pady=6).pack(side="left", padx=(16, 6))
+            pause_btn = flat_btn(bar, "暂停", lambda: self._toggle_pause(key),
+                                 bg=C["neutral_bg"], fg=C["text"],
+                                 active_bg=C["neutral_hover"],
+                                 padx=14, pady=6)
+            pause_btn.pack(side="left", padx=(0, 16))
+            self.pages[key]["pause_btn"] = pause_btn
+            # 文件大小：下拉菜单式，6 档固定阈值
+            tk.Label(bar, text="文件大小", bg=C["page_bg"], fg=C["text_sub"],
+                     font=F["body"]).pack(side="left", padx=(0, 6))
+            sv = tk.StringVar(value="4G以上")
+            ttk.Combobox(bar, textvariable=sv, values=SIZE_CHOICES,
+                         state="readonly", width=12, font=F["body"]).pack(side="left")
             self.pages[key]["size_var"] = sv
         if key == "wps":
             af = tk.Frame(bar, bg=C["page_bg"])
@@ -626,39 +711,17 @@ class App:
         tree.pack(side="left", fill="both", expand=True, padx=(1, 0), pady=1)
         vsb.pack(side="right", fill="y")
         tree.bind("<Button-1>", lambda e, k=key: self._on_tree_click(k, e))
+        tree.bind("<<TreeviewSelect>>", lambda e, k=key: self._on_tree_select(k, e))
         if key == "large":
             tree.bind("<Double-1>", lambda e, k=key: self._open_location(k, e))
 
-        detail = card_frame(work, width=250, height=560)
-        detail.pack(side="right", fill="y", padx=(12, 0))
-        detail.pack_propagate(False)  # 固定尺寸，避免空内容时塌成 1px 不可见
+        d = self._make_detail_panel(work, key)
         table_card.pack(side="left", fill="both", expand=True)  # 详情先占位，再放表格
-        tk.Label(detail, text="项目详情", bg=C["card"], fg=C["text"],
-                 font=F["body_bold"]).pack(anchor="w", padx=14, pady=(14, 6))
-        dsel = tk.Label(detail, text="未选择项目", bg=C["card"], fg=C["text_mute"],
-                        font=F["body"], wraplength=220, justify="left")
-        dsel.pack(anchor="w", padx=14, pady=(2, 14))
-        tk.Label(detail, text="删除后果", bg=C["card"], fg=C["text_sub"],
-                 font=F["small"]).pack(anchor="w", padx=14)
-        tk.Label(detail, text="文件将送入系统回收站，可随时还原；不会永久删除。",
-                 bg=C["card"], fg=C["text_sub"], font=F["small"],
-                 wraplength=220, justify="left").pack(anchor="w", padx=14, pady=(2, 12))
-        tk.Label(detail, text="位置", bg=C["card"], fg=C["text_sub"],
-                 font=F["small"]).pack(anchor="w", padx=14)
-        dpath = tk.Label(detail, text="—", bg=C["card"], fg=C["text_mute"],
-                         font=F["small"], wraplength=220, justify="left")
-        dpath.pack(anchor="w", padx=14, pady=(2, 12))
-        if key == "wps":
-            tipw = tk.Label(detail, text="长期方案：WPS → 备份中心 → 备份设置，"
-                            "将本地备份目录改到 D 盘，避免 C 盘被占满。",
-                            bg=C["tip_bg"], fg=C["tip_fg"], font=F["small"],
-                            wraplength=220, justify="left", padx=8, pady=6)
-            tipw.pack(fill="x", padx=12, pady=(6, 12))
 
         self.pages[key].update(
             built=True, tree=tree, items={}, checked={},
-            status=status, sel_var=sel_var, detail_sel=dsel, detail_path=dpath,
-            queue=queue.Queue(), cancel=threading.Event(), scanning=False,
+            status=status, sel_var=sel_var,
+            queue=queue.Queue(), cancel=threading.Event(), scanning=False, **d,
         )
 
     def _build_log_page(self):
@@ -759,9 +822,20 @@ class App:
     def _scan_fn_for(self, key):
         if key == "large":
             pg = self.pages[key]
-            drives = pg.get("selected_drives") or [d for d, _ in pg.get("drive_vars", [])]
+            drives = (pg.get("selected_drives") or pg.get("all_drives")
+                      or [d for d, _ in pg.get("drive_vars", [])])
             size = pg.get("size_mb", 4096)
-            return lambda cancel, progress: disktools.scan_large_files(drives, size, cancel, progress)
+            pause = pg.get("pause")
+
+            def scan_with_pause(cancel, progress):
+                def cancel_wait():
+                    # 暂停时阻塞扫描线程（每 0.1s 检查一次），取消则立即退出
+                    while pause is not None and pause.is_set() and not cancel():
+                        time.sleep(0.1)
+                    return cancel()
+                return disktools.scan_large_files(drives, size, cancel_wait, progress)
+
+            return scan_with_pause
         return SCAN_FN[key]
 
     # 各扫描入口的预计阶段数（用于弹窗 i/total；仅影响展示，不影响扫描范围）
@@ -790,7 +864,11 @@ class App:
         # 主线程先读取 Tk 变量，避免后台线程访问导致 RuntimeError
         if key == "large":
             pg["selected_drives"] = self._selected_drives(key)
-            pg["size_mb"] = self.pages[key]["size_var"].get()
+            pg["size_mb"] = SIZE_MB_MAP.get(self.pages[key]["size_var"].get(), 4096)
+            if "pause" in pg:
+                pg["pause"].clear()
+            if "pause_btn" in pg:
+                pg["pause_btn"].configure(text="暂停")
         dlg = ScanProgressDialog(
             self.root, self._scan_title(key), self.SCAN_TOTAL.get(key, 7),
             cancel_callback=lambda: pg["cancel"].set())
@@ -942,36 +1020,178 @@ class App:
         pg["checked"].clear()
         for it in items:
             risk = self._risk_of(it)
-            iid = tree.insert("", "end", values=(
-                "☑" if it.default_checked else "☐",
-                risk if key == "checkup" else it.category,
-                it.name, human_size(it.size), it.file_count, it.note or it.path,
-            ))
+            mark = "☑" if it.default_checked else "☐"
+            if key == "checkup":
+                values = (mark, it.name, human_size(it.size), risk)
+            else:
+                values = (mark, it.category, it.name, human_size(it.size),
+                          it.file_count, it.note or it.path)
+            iid = tree.insert("", "end", values=values)
             tree.item(iid, tags=(risk,))
             pg["items"][iid] = it
             pg["checked"][iid] = it.default_checked
-        tree.tag_configure("低风险", foreground=C["success"])
-        tree.tag_configure("中风险", foreground=C["warning"])
-        tree.tag_configure("高风险", foreground=C["danger"])
+        if key == "checkup":
+            for level, bg in (("低风险", C["low_bg"]),
+                              ("中风险", C["mid_bg"]),
+                              ("高风险", C["high_bg"])):
+                tree.tag_configure(level, background=bg, foreground=C["text"])
+        else:
+            tree.tag_configure("低风险", foreground=C["success"])
+            tree.tag_configure("中风险", foreground=C["warning"])
+            tree.tag_configure("高风险", foreground=C["danger"])
         self._update_selected(key)
+        first = tree.get_children()
+        if first:
+            self._show_detail(key, first[0])
+        else:
+            self._clear_detail(key)
 
     def _on_tree_click(self, key, event):
+        """点击任意列都刷新详情；只有点「选择」列才切换勾选。"""
         pg, tree = self.pages[key], self.pages[key]["tree"]
         if tree.identify("region", event.x, event.y) != "cell":
-            return
-        if tree.identify_column(event.x) != "#1":
             return
         iid = tree.identify_row(event.y)
         if not iid:
             return
+        self._show_detail(key, iid)
+        if tree.identify_column(event.x) == "#1":
+            new = not pg["checked"].get(iid, False)
+            pg["checked"][iid] = new
+            tree.set(iid, "sel", "☑" if new else "☐")
+            self._update_selected(key)
+
+    def _on_tree_select(self, key, event):
+        tree = self.pages[key]["tree"]
+        sel = tree.selection()
+        if sel:
+            self._show_detail(key, sel[0])
+
+    @staticmethod
+    def _short_path(p, limit=96):
+        return p if len(p) <= limit else p[:40] + "…" + p[-52:]
+
+    @staticmethod
+    def _draw_pill(cv, level):
+        """在 Canvas 上画一枚圆角胶囊风险标签。"""
+        cv.delete("all")
+        bg, fg = {"低风险": (C["low_bg"], C["success"]),
+                  "中风险": (C["mid_bg"], C["warning"]),
+                  "高风险": (C["high_bg"], C["danger"])}.get(
+                      level, (C["low_bg"], C["success"]))
+        w, h = int(cv["width"]), int(cv["height"])
+        cv.create_oval(0, 0, h, h, fill=bg, outline="")
+        cv.create_oval(w - h, 0, w, h, fill=bg, outline="")
+        cv.create_rectangle(h // 2, 0, w - h // 2, h, fill=bg, outline="")
+        cv.create_text(w // 2, h // 2, text=level, fill=fg, font=F["pill"])
+
+    def _sort_by_size(self, key):
+        """点击「大小」表头在降序 / 升序间切换。"""
+        pg = self.pages[key]
+        tree = pg["tree"]
+        desc = not pg.get("size_desc", True)
+        pg["size_desc"] = desc
+        rows = [(pg["items"][iid].size, iid) for iid in tree.get_children()
+                if iid in pg["items"]]
+        rows.sort(key=lambda t: t[0], reverse=desc)
+        for idx, (_, iid) in enumerate(rows):
+            tree.move(iid, "", idx)
+        tree.heading("size", text="大小 " + ("▼" if desc else "▲"))
+
+    def _toggle_detail_item(self, key):
+        """详情面板底部按钮：切换当前项目的勾选状态。"""
+        pg = self.pages[key]
+        iid = pg.get("detail_iid")
+        if not iid or iid not in pg["items"]:
+            return
         new = not pg["checked"].get(iid, False)
         pg["checked"][iid] = new
-        tree.set(iid, "sel", "☑" if new else "☐")
+        pg["tree"].set(iid, "sel", "☑" if new else "☐")
         self._update_selected(key)
+        self._show_detail(key, iid)
+
+    def _open_detail_folder(self, key):
+        """详情面板底部按钮：在资源管理器中打开项目所在文件夹。"""
+        pg = self.pages[key]
+        it = pg["items"].get(pg.get("detail_iid"))
+        if not it:
+            return
+        target = it.path or (it.files[0] if it.files else "")
+        if not target:
+            return
+        folder = target if os.path.isdir(target) else os.path.dirname(target)
+        try:
+            os.startfile(folder)
+        except Exception:
+            pass
+
+    @staticmethod
+    def _consequence(it):
+        """按项目类型给出「删除后果 / 建议」文案（参考设计稿）。"""
+        name = it.name
+        if getattr(it, "no_clean", False):
+            return ("该类仅用于统计，不参与清理，不会被删除。",
+                    "无需操作，仅供了解占用情况。")
+        if getattr(it, "no_recycle", False) or "回收站" in name:
+            return ("文件将被永久删除，无法从回收站还原。",
+                    "高风险：请先确认没有需要还原的文件。")
+        if "临时文件" in name:
+            return ("只删除临时文件，程序下次运行时会自动重建，"
+                    "不涉及任何个人数据。", "放心删，建议每次都勾上。")
+        if "缓存" in name or "cache" in name.lower():
+            return ("仅清理缓存副本，程序下次运行时会按需重建，"
+                    "不会删除账号、文档等个人数据。",
+                    "可清理；清理后首次打开可能略慢。")
+        return ("选中项将送入系统回收站，可随时还原。",
+                "建议先确认内容再清理。")
+
+    def _clear_detail(self, key):
+        pg = self.pages[key]
+        if "dsel" not in pg:
+            return
+        pg["detail_iid"] = None
+        pg["dsel"].configure(text="点击左侧项目查看详情",
+                             fg=C["text_mute"], font=F["body"])
+        pg["dsize"].configure(text="—")
+        self._draw_pill(pg["dpill"], "低风险")
+        pg["dconseq"].configure(text="—")
+        pg["dadvice"].configure(text="—")
+        pg["dpath"].configure(text="—")
+        pg["dtoggle"].configure(text="选择此项", state="disabled")
+        pg["dopen"].configure(state="disabled")
+
+    def _show_detail(self, key, iid):
+        """把选中项的名称/风险/大小/删除后果/建议/真实位置写入详情面板。"""
+        pg = self.pages[key]
         it = pg["items"].get(iid)
-        if it:
-            pg["detail_sel"].configure(text=it.name, fg=C["text"])
-            pg["detail_path"].configure(text=it.path or it.note)
+        if not it or "dsel" not in pg:
+            return
+        pg["detail_iid"] = iid
+        risk = self._risk_of(it)
+        pg["dsel"].configure(text=it.name, fg=C["text"], font=F["title"])
+        pg["dsize"].configure(text=human_size(it.size))
+        pg["dtoggle"].configure(state="normal")
+        pg["dopen"].configure(state="normal")
+        self._draw_pill(pg["dpill"], risk)
+        conseq, advice = self._consequence(it)
+        pg["dconseq"].configure(text=conseq, fg=C["text_sub"])
+        pg["dadvice"].configure(text=advice, fg=C["text_sub"])
+        paths = [p for p in (it.files or []) if p]
+        if it.path:
+            loc = self._short_path(it.path, 52)
+            extra = [p for p in paths if p != it.path]
+            if extra:
+                loc += "\n另有 %d 个位置：\n%s" % (
+                    len(extra), self._short_path(extra[0], 52))
+        elif paths:
+            loc = "\n".join(self._short_path(p, 52) for p in paths[:3])
+            if len(paths) > 3:
+                loc += "\n… 共 %d 个位置" % len(paths)
+        else:
+            loc = "—（汇总项，暂无具体路径）"
+        pg["dpath"].configure(text=loc)
+        pg["dtoggle"].configure(
+            text="取消选择此项" if pg["checked"].get(iid) else "选择此项")
 
     def _open_location(self, key, event):
         pg, tree = self.pages[key], self.pages[key]["tree"]
@@ -986,8 +1206,29 @@ class App:
             except Exception:
                 pass
 
+    def _toggle_pause(self, key):
+        """「暂停 / 继续」：暂停时扫描线程在下一次 cancel 检查处挂起。"""
+        pg = self.pages[key]
+        ev = pg.get("pause")
+        if not ev:
+            return
+        if ev.is_set():
+            ev.clear()
+            pg["pause_btn"].configure(text="暂停")
+            pg["status"].configure(text="继续扫描…")
+        else:
+            ev.set()
+            pg["pause_btn"].configure(text="继续")
+            pg["status"].configure(text="已暂停，点「继续」恢复扫描")
+
     def _selected_drives(self, key):
-        dvars = self.pages[key].get("drive_vars", [])
+        pg = self.pages[key]
+        if key == "large" and "drive_labels" in pg:
+            d = pg["drive_labels"].get(pg["drive_var"].get())
+            if d == "__ALL__":
+                return list(pg.get("all_drives") or [])
+            return [d] if d else list(pg.get("all_drives") or [])[:1]
+        dvars = pg.get("drive_vars", [])
         chosen = [d for d, v in dvars if v.get()]
         return chosen or [d for d, _ in dvars]
 

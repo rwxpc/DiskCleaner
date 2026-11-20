@@ -4,7 +4,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-VERSION = "1.2.2"  # 版本号单一来源，app.py 与侧栏共用
+VERSION = "1.3.0"  # 版本号单一来源，app.py 与侧栏共用
 
 # ---------- 配色 ----------
 # 主题「精密仪器」：深墨蓝控制台侧栏 + 冷白数据区（自 v1.2.0 沿用至今）。
@@ -305,3 +305,233 @@ class StatCard(tk.Frame):
                  font=F["card_value"]).pack(side="left")
         tk.Label(row, text=f"  {sub}", bg=C["card"], fg=C["text_mute"],
                  font=F["card_unit"]).pack(side="left")
+
+
+class SweepCanvas(tk.Canvas):
+    """清理进度小窗里的「动态扫地」效果。
+
+    纯 Canvas 绘制地面、碎屑、扫把与右侧回收桶：扫把随真实清理进度从左向右
+    推进，沿途碎屑被扫起并飞入桶中；收集文件阶段扫把在左侧小幅往复摆动。
+    """
+
+    def __init__(self, parent, width=460, height=78):
+        tk.Canvas.__init__(self, parent, width=width, height=height,
+                           bg=C["card"], highlightthickness=0)
+        import random
+        self.W, self.H = width, height
+        self._ground = height - 15
+        self._x = 0.02
+        self._target = 0.02
+        self._idle = True
+        self._dir = 1
+        self._after_id = None
+        self._debris = []
+        self._rng = random.Random(20261120)
+        self._build_scene()
+        self._tick()
+
+    @property
+    def _broom_x(self):
+        # 留出右侧回收桶的宽度，进度 100% 时扫把刚好停在桶左侧
+        return self._x * (self.W - 70)
+
+    def _build_scene(self):
+        self.create_line(10, self._ground, self.W - 10, self._ground,
+                         fill=C["border"], width=2)
+        bx = self.W - 48
+        self.create_polygon(bx, self._ground - 26, bx + 30, self._ground - 26,
+                            bx + 26, self._ground - 2, bx + 4, self._ground - 2,
+                            fill=C["primary_light"], outline=C["primary"], width=1.5)
+        self.create_rectangle(bx - 3, self._ground - 30, bx + 33, self._ground - 26,
+                              fill=C["primary"], outline="")
+        # 碎屑用略深的柔和色，白底上才能看清「被扫走」的过程
+        palette = ["#B9CDF7", "#A8B7CE", "#F3C77A", "#8FA6CC", "#CBD8F2"]
+        for i in range(26):
+            x = 14 + i * ((self.W - 120) / 26) + self._rng.uniform(-4, 4)
+            y = self._ground - self._rng.uniform(3, 13)
+            s = self._rng.uniform(3, 6)
+            cid = self.create_rectangle(x, y, x + s, y + s,
+                                        fill=palette[i % len(palette)], outline="")
+            self._debris.append([cid, x, y, "idle", 0])
+        self._label = self.create_text(12, 14, anchor="w",
+                                      text="正在收集待清理文件…",
+                                      fill=C["text_mute"], font=F["small"])
+        self._draw_broom()
+
+    def _draw_broom(self):
+        self.delete("broom")
+        x, y = self._broom_x, self._ground
+        self.create_line(x + 12, y - 44, x - 1, y - 13, fill=C["primary"],
+                         width=3, capstyle="round", tags="broom")
+        self.create_polygon(x - 11, y - 13, x + 11, y - 13,
+                            x + 14, y - 1, x - 14, y - 1,
+                            fill=C["primary_light"], outline=C["primary"],
+                            width=1.5, tags="broom")
+        for k in range(6):
+            bx = x - 12 + k * 5
+            self.create_line(bx, y - 1, bx - 1, y + 2, fill=C["primary"],
+                             width=1, tags="broom")
+
+    def _sweep_debris(self):
+        bx = self._broom_x
+        for d in self._debris:
+            state = d[3]
+            if state == "gone":
+                continue
+            if state == "flying":
+                self.move(d[0], 3.4, -1.7)
+                d[4] -= 1
+                if d[4] <= 0:
+                    self.delete(d[0])
+                    d[3] = "gone"
+            elif d[1] <= bx + 10:
+                d[3] = "flying"
+                d[4] = 9
+
+    def set_progress(self, fraction):
+        """由真实清理进度驱动（0.0 ~ 1.0）。"""
+        self._idle = False
+        self._target = max(0.0, min(1.0, float(fraction)))
+
+    def finish(self):
+        self._idle = False
+        self._target = 1.0
+        self.after(360, self._clear_all)
+
+    def _clear_all(self):
+        try:
+            for d in self._debris:
+                if d[3] != "gone":
+                    self.delete(d[0])
+                    d[3] = "gone"
+            self.itemconfigure(self._label, text="✓  已清理干净")
+        except tk.TclError:
+            pass
+
+    def stop(self):
+        try:
+            if self._after_id:
+                self.after_cancel(self._after_id)
+        except Exception:
+            pass
+
+    def _tick(self):
+        try:
+            if not self.winfo_exists():
+                return
+            if self._idle:
+                self._x += 0.005 * self._dir
+                if self._x > 0.22:
+                    self._dir = -1
+                elif self._x < 0.02:
+                    self._dir = 1
+            else:
+                self._x += (self._target - self._x) * 0.14
+            self._draw_broom()
+            self._sweep_debris()
+            if not self._idle:
+                self.itemconfigure(self._label, text="清理进度 %d%%" % int(self._x * 100))
+        except tk.TclError:
+            return
+        self._after_id = self.after(30, self._tick)
+
+
+class MagnifierCanvas(tk.Canvas):
+    """扫描进度弹窗里的运动放大镜。
+
+    镜片沿一排「文件块」左右移动，扫过的文件块被放大高亮；扫描开始时往复
+    巡视，随后由真实进度驱动平滑推进，完成后定格并提示「扫描完成」。
+    """
+
+    def __init__(self, parent, width=430, height=78):
+        tk.Canvas.__init__(self, parent, width=width, height=height,
+                           bg=C["card"], highlightthickness=0)
+        self.W, self.H = width, height
+        self._x = 0.06
+        self._target = 0.06
+        self._idle = True
+        self._dir = 1
+        self._after_id = None
+        self._cells = []
+        self._cy = height - 34
+        self._r = 15
+        self._build_scene()
+        self._tick()
+
+    def _mag_x(self):
+        return 22 + self._x * (self.W - 70)
+
+    def _build_scene(self):
+        self.create_line(10, self.H - 14, self.W - 10, self.H - 14,
+                         fill=C["border"], width=2)
+        palette = ["#D7E2F7", "#C9D6EE", "#E8EDF6", "#BFD0F0"]
+        for i in range(16):
+            x = 14 + i * ((self.W - 40) / 16)
+            y = self._cy - 6
+            color = palette[i % len(palette)]
+            cid = self.create_rectangle(x, y, x + 14, y + 12,
+                                        fill=color, outline="")
+            self._cells.append([cid, x, y, 14, color])
+        self._label = self.create_text(12, 14, anchor="w", text="正在扫描…",
+                                      fill=C["text_mute"], font=F["small"])
+        self._draw_magnifier()
+
+    def _draw_magnifier(self):
+        self.delete("mag")
+        x, cy, r = self._mag_x(), self._cy, self._r
+        self.create_oval(x - r, cy - r, x + r, cy + r,
+                         fill=C["primary_light"], outline=C["primary"],
+                         width=2, tags="mag")
+        for k in (-6, 0, 6):
+            self.create_line(x - 8, cy + k * 0.7, x + 8, cy + k * 0.7,
+                             fill=C["primary"], width=1.5, tags="mag")
+        self.create_line(x + r * 0.7, cy + r * 0.7, x + r + 12, cy + r + 12,
+                         fill=C["primary"], width=4, capstyle="round", tags="mag")
+
+    def _highlight(self, x):
+        for c in self._cells:
+            cx = c[1] + c[3] / 2
+            self.itemconfigure(c[0], fill=C["primary"] if abs(cx - x) < 22 else c[4])
+
+    def set_progress(self, fraction):
+        """由真实扫描进度驱动（0.0 ~ 1.0），必须在主线程调用。"""
+        self._idle = False
+        self._target = max(0.0, min(1.0, float(fraction)))
+
+    def finish(self):
+        self._idle = False
+        self._target = 1.0
+        self.after(260, self._show_done)
+
+    def _show_done(self):
+        try:
+            self.itemconfigure(self._label, text="✓  扫描完成")
+        except tk.TclError:
+            pass
+
+    def stop(self):
+        try:
+            if self._after_id:
+                self.after_cancel(self._after_id)
+        except Exception:
+            pass
+
+    def _tick(self):
+        try:
+            if not self.winfo_exists():
+                return
+            if self._idle:
+                self._x += 0.008 * self._dir
+                if self._x > 0.92:
+                    self._dir = -1
+                elif self._x < 0.06:
+                    self._dir = 1
+            else:
+                self._x += (self._target - self._x) * 0.14
+            self._draw_magnifier()
+            self._highlight(self._mag_x())
+            if not self._idle:
+                self.itemconfigure(self._label, text="扫描进度 %d%%" % int(self._x * 100))
+        except tk.TclError:
+            return
+        self._after_id = self.after(30, self._tick)
