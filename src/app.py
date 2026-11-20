@@ -47,8 +47,8 @@ PAGE_META = {
                 "预读取文件(Prefetch)、缩略图缓存、图标缓存、系统临时文件、Windows 更新缓存、"
                 "Windows.old 残留目录、DirectX 着色器缓存、用户临时文件、浏览器缓存、系统错误报告。",
                 "仅列出扫描到内容的类别；每项标注风险等级与删除后果。驱动仓库等高风险项只统计不清理。"),
-    "wechat": ("微信专清", "扫描所有本地磁盘中的 WeChat Files 数据目录，按图片/视频/音频/文件/缓存/聊天记录汇总；聊天记录只统计不清理。", ""),
-    "wxwork": ("企业微信专清", "扫描所有本地磁盘中的 WXWork 数据目录，按图片/视频/音频/文件/缓存/聊天记录汇总；聊天记录只统计不清理。", ""),
+    "wechat": ("微信专清", "扫描所有本地磁盘中的 WeChat Files 数据目录，按 7 类汇总（含新增「文档」）；文档与文件互不重复，聊天记录只统计不清理。", ""),
+    "wxwork": ("企业微信专清", "扫描所有本地磁盘中的 WXWork 数据目录，按 7 类汇总（含新增「文档」）；文档与文件互不重复，聊天记录只统计不清理。", ""),
     "wps": ("WPS缓存专清", "枚举 Kingsoft 缓存目录，重点标注本地备份与云同步缓存；清理前可转存文档。", ""),
     "large": ("扫描大文件", "列出所选磁盘上的超大文件；双击可打开所在目录，勾选后可送入回收站。", ""),
     "log": ("日志", "所有扫描与清理动作的完整记录，同时写入本地日志文件。", ""),
@@ -615,9 +615,11 @@ class App:
 
         tk.Label(inner, text="位置", bg=C["card"], fg=C["text_mute"],
                  font=F["small"]).pack(anchor="w", padx=12)
-        dpath = tk.Label(inner, text="—", bg=C["card"], fg=C["text_mute"],
-                         font=F["small"], wraplength=WL, justify="left")
-        dpath.pack(anchor="w", padx=12, pady=(2, 6))
+        # v1.7.0：位置区改为可点击的目录链接容器，由 _set_locations 动态填充。
+        dpath = tk.Frame(inner, bg=C["card"])
+        dpath.pack(anchor="w", padx=12, pady=(2, 6), fill="x")
+        tk.Label(dpath, text="—", bg=C["card"], fg=C["text_mute"],
+                 font=F["small"], wraplength=WL, justify="left").pack(anchor="w")
 
         if key == "wps":
             tk.Label(inner, text="长期方案：WPS → 备份中心 → 备份设置，"
@@ -636,7 +638,7 @@ class App:
                     dconseq=dconseq, dadvice=dadvice, dpath=dpath,
                     dtoggle=dtoggle, dopen=dopen,
                     detail_canvas=canvas, detail_scrollbar=vbar,
-                    detail_inner=inner, detail_iid=None)
+                    detail_inner=inner, detail_iid=None, detail_WL=WL)
 
     def _build_checkup(self):
         page = self.pages["checkup"]["frame"]
@@ -907,7 +909,7 @@ class App:
 
     # 各扫描入口的预计阶段数（用于弹窗 i/total；仅影响展示，不影响扫描范围）
     SCAN_TOTAL = {
-        "checkup": 12, "wechat": 7, "wxwork": 7, "wps": 8, "large": 4,
+        "checkup": 12, "wechat": 8, "wxwork": 8, "wps": 8, "large": 4,
     }
 
     def _scan_title(self, key):
@@ -1330,6 +1332,103 @@ class App:
         return ("选中项将送入系统回收站，可随时还原。",
                 "建议先确认内容再清理。")
 
+    def _set_locations(self, pg, paths, note=""):
+        """v1.7.0：把详情面板「位置」区渲染成可点击的目录链接列表。
+
+        每个路径显示为蓝色下划线标签，点击后调用 _open_dir 打开对应本地
+        文件夹（若指向文件则打开其所在文件夹）；目录不存在或无权限访问时
+        由 _open_dir 弹出明确提示。内容动态重建后同步刷新滚动区域。
+        """
+        holder = pg["dpath"]
+        for w in list(holder.winfo_children()):
+            w.destroy()
+        WL = pg.get("detail_WL", 196)
+        link_font = (F["small"][0], F["small"][1], "underline")
+        cv = pg["detail_canvas"]
+
+        def _wheel(e):
+            try:
+                cv.yview_scroll(int(-1 * (e.delta / 120)), "units")
+            except Exception:
+                pass
+
+        def _brief(p):
+            """链接显示用紧凑路径：盘符 + … + 末两级目录名。
+
+            点击回调仍使用完整真实路径，这里只为在 236px 窄面板里让
+            多条数据目录都能一屏可读，不至于互相挤到不可见。
+            """
+            if len(p) <= 34:
+                return p
+            drive, _ = os.path.splitdrive(p)
+            parent = os.path.basename(os.path.dirname(p))
+            name = os.path.basename(p)
+            return "%s\\…\\%s\\%s" % (drive, parent, name)
+
+        if note:
+            tk.Label(holder, text=note, bg=C["card"], fg=C["text_mute"],
+                     font=F["small"], wraplength=WL, justify="left",
+                     anchor="w").pack(anchor="w", fill="x")
+        if not paths:
+            tk.Label(holder, text="—（汇总项，暂无具体路径）", bg=C["card"],
+                     fg=C["text_mute"], font=F["small"], wraplength=WL,
+                     justify="left", anchor="w").pack(anchor="w", fill="x")
+        else:
+            for p in paths:
+                lbl = tk.Label(holder, text="• " + _brief(p),
+                               bg=C["card"], fg=C["primary"], font=link_font,
+                               wraplength=WL, justify="left", anchor="w",
+                               cursor="hand2")
+                lbl.pack(anchor="w", fill="x", pady=(1, 0))
+                lbl.bind("<Button-1>", lambda e, path=p: self._open_dir(path))
+                lbl.bind("<Enter>",
+                         lambda e, w=lbl: w.configure(fg=C["primary_hover"]))
+                lbl.bind("<Leave>",
+                         lambda e, w=lbl: w.configure(fg=C["primary"]))
+        # 动态新建的控件不会继承滚轮绑定，统一补绑
+        for w in holder.winfo_children():
+            w.bind("<MouseWheel>", _wheel)
+        self._refresh_detail_scroll(pg)
+
+    def _open_dir(self, path):
+        """打开「位置」列表里点击的目录；不存在 / 无权限时给出明确提示。"""
+        if not path:
+            messagebox.showwarning(APP_NAME, "该位置没有有效路径。")
+            return
+        target = path
+        try:
+            if os.path.isfile(target):
+                target = os.path.dirname(target) or target
+        except OSError:
+            pass
+        if not target or not os.path.exists(target):
+            messagebox.showwarning(
+                APP_NAME, "目录不存在或已被清理，无法打开：\n\n" + path)
+            return
+        if not os.path.isdir(target):
+            messagebox.showwarning(
+                APP_NAME, "该位置不是文件夹，无法打开：\n\n" + path)
+            return
+        try:
+            os.listdir(target)  # 探测访问权限，避免静默失败
+        except PermissionError:
+            messagebox.showwarning(
+                APP_NAME,
+                "没有权限访问该目录，请以管理员身份运行后重试：\n\n" + path)
+            return
+        except OSError as exc:
+            messagebox.showwarning(
+                APP_NAME, "无法访问该目录：\n\n%s\n\n%s" % (path, exc))
+            return
+        try:
+            os.startfile(target)
+        except OSError as exc:
+            messagebox.showwarning(
+                APP_NAME, "无法打开该文件夹：\n\n%s\n\n%s" % (path, exc))
+        except Exception as exc:
+            messagebox.showwarning(
+                APP_NAME, "打开文件夹失败：\n\n%s\n\n%s" % (path, exc))
+
     def _clear_detail(self, key):
         pg = self.pages[key]
         if "dsel" not in pg:
@@ -1341,7 +1440,7 @@ class App:
         self._draw_pill(pg["dpill"], "低风险")
         pg["dconseq"].configure(text="—")
         pg["dadvice"].configure(text="—")
-        pg["dpath"].configure(text="—")
+        self._set_locations(pg, [], "")
         pg["dtoggle"].configure(text="选择此项", state="disabled")
         pg["dopen"].configure(state="disabled")
         self._refresh_detail_scroll(pg)
@@ -1375,25 +1474,25 @@ class App:
         conseq, advice = self._consequence(it)
         pg["dconseq"].configure(text=conseq, fg=C["text_sub"])
         pg["dadvice"].configure(text=advice, fg=C["text_sub"])
+        # v1.7.0：位置区改为可点击目录列表，点击直接打开对应本地文件夹。
         roots = [r for r in (getattr(it, "roots", None) or []) if r]
         paths = [p for p in (it.files or []) if p]
         if roots:
-            # v1.6.0：逐条列出所有本地磁盘上找到的 WeChat Files / WXWork 目录
-            loc = "共找到 %d 个数据目录：\n%s" % (
-                len(roots), "\n".join(self._short_path(r, 52) for r in roots))
-        elif it.path:
-            loc = self._short_path(it.path, 52)
-            extra = [p for p in paths if p != it.path]
-            if extra:
-                loc += "\n另有 %d 个位置：\n%s" % (
-                    len(extra), self._short_path(extra[0], 52))
-        elif paths:
-            loc = "\n".join(self._short_path(p, 52) for p in paths[:3])
-            if len(paths) > 3:
-                loc += "\n… 共 %d 个位置" % len(paths)
+            note = "共找到 %d 个数据目录，点击可打开：" % len(roots)
+            locs = list(roots)
         else:
-            loc = "—（汇总项，暂无具体路径）"
-        pg["dpath"].configure(text=loc)
+            locs = []
+            if it.path:
+                locs.append(it.path)
+            for p in paths:
+                if p != it.path and p not in locs:
+                    locs.append(p)
+            note = "点击路径可打开所在文件夹：" if locs else ""
+            hidden = max(0, len(locs) - 8)
+            locs = locs[:8]
+            if hidden:
+                note += "\n另有 %d 个位置未列出" % hidden
+        self._set_locations(pg, locs, note)
         pg["dtoggle"].configure(
             text="取消选择此项" if pg["checked"].get(iid) else "选择此项")
         self._refresh_detail_scroll(pg)

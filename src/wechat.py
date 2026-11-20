@@ -1,8 +1,18 @@
 # -*- coding: utf-8 -*-
 """微信专清 / 企业微信专清 扫描模块。
 
-类别严格按设计稿固定为 6 类：图片、视频、音频、文件、缓存、聊天记录。
-其中「聊天记录」只统计不清理；「文件」默认不勾选。
+类别固定为 7 类：图片、视频、音频、文件、文档、缓存、聊天记录。
+其中「聊天记录」只统计不清理；「文件」「文档」默认不勾选。
+
+v1.7.0 新增「文档」类别
+------------------------
+按扩展名优先判定常用办公文档（电子文档 / 电子表格 / 演示文档 / PDF /
+WPS / CSV 等），无论文件位于 File、attachment 还是其它目录，都归入「文档」；
+「文件」类别的扩展名集合已剔除这些后缀，二者严格互斥、不重复统计。
+
+清理目标也随之精确化：「文件」「文档」两类按**具体文件路径**收集（而非
+所在目录），因为这两类文件常混在同一个目录下，若按目录清理，勾选其中一类
+会连带删除另一类的文件。其余 5 类仍按目录收集，保持既有清理逻辑不变。
 
 v1.6.0 全磁盘扫描修复
 ----------------------
@@ -14,7 +24,7 @@ v1.6.0 全磁盘扫描修复
 现改为：
   * 枚举「所有可访问的本地固定磁盘」，逐个做根目录第一层快速命中 +
     有限深度目录名搜索，合并去重后返回**全部**匹配目录；
-  * 6 类聚合统计与清理覆盖所有找到的目录，不再只统计 C 盘；
+  * 7 类聚合统计与清理覆盖所有找到的目录，不再只统计 C 盘；
   * 全部数据目录经 ScanItem.roots 带出，由详情面板与日志逐条列出；
   * 不可访问磁盘（未解锁、RAW、未就绪）与无权限目录一律跳过并继续，
     单个磁盘/目录失败不影响其余磁盘，跳过的盘符写入日志提示。
@@ -22,22 +32,36 @@ v1.6.0 全磁盘扫描修复
 from __future__ import annotations
 import os
 from core import (
-    ScanItem, get_accessible_fixed_drives, scan_directory_names,
+    ScanItem, DOC_EXTS, get_accessible_fixed_drives, scan_directory_names,
     is_reparse, iter_files,
 )
 
 WECHAT_NAMES = {"wechat files", "wechat", "xwechat_files"}
 WXWORK_NAMES = {"wxwork"}
 
-# 设计稿固定 6 类：(名称, 说明, 风险, 默认勾选, 只统计不清理)
+# v1.7.0：常用办公文档扩展名。以 core.DOC_EXTS（WPS 文档转存共用口径）为基础，
+# 补充 CSV 电子表格、Office 宏/模板格式与常见版式文档，覆盖「电子文档、
+# 电子表格、演示文档、PDF 等类型」。
+OFFICE_EXTS = set(DOC_EXTS) | {
+    ".csv", ".docm", ".dotx", ".dotm", ".dot",
+    ".xlsm", ".xltx", ".xltm", ".xlt", ".xlsb",
+    ".pptm", ".potx", ".potm", ".pot", ".ppsx", ".pps",
+    ".xps", ".oxps", ".mht", ".mhtml", ".epub",
+}
+
+# 固定 7 类：(名称, 说明, 风险, 默认勾选, 只统计不清理)
 CATEGORIES = [
     ("图片", "聊天里的普通图片、表情、头像", "低风险", True, False),
     ("视频", "聊天里的视频与短视频", "低风险", True, False),
     ("音频", "语音消息与音频文件", "低风险", True, False),
-    ("文件", "聊天收发的文档、压缩包（默认不勾选）", "中风险", False, False),
+    ("文件", "聊天收发的压缩包、文本等其它文件（默认不勾选）", "中风险", False, False),
+    ("文档", "聊天收发的 Word/Excel/PPT/PDF/WPS 等办公文档（默认不勾选）", "中风险", False, False),
     ("缓存", "加密的聊天图片/视频（.dat）、缩略图与临时文件，最大的一块", "低风险", True, False),
     ("聊天记录", "微信数据库（db_storage），只统计不清理", "高风险", False, True),
 ]
+
+# 「文件」「文档」按精确文件路径清理，避免两类共享目录时交叉删除
+FILE_LEVEL_CATS = {"文件", "文档"}
 
 # 目录名 -> 类别（小写匹配，覆盖新旧微信目录结构）
 DIR_RULES = {
@@ -52,13 +76,15 @@ DIR_RULES = {
     "msg": "聊天记录", "message": "聊天记录",
 }
 
-# 扩展名兜底分类（当目录名无法判定）
+# 扩展名兜底分类（当目录名无法判定）。
+# v1.7.0：「文件」集合已移除全部办公文档后缀，办公文档一律由 OFFICE_EXTS
+# 优先判定为「文档」，两类严格互斥，绝不重复统计。
 EXT_RULES = {
     "图片": {".jpg", ".jpeg", ".png", ".gif", ".bmp", ".webp"},
     "视频": {".mp4", ".avi", ".mkv", ".mov", ".webm"},
     "音频": {".mp3", ".wav", ".amr", ".silk", ".ogg", ".m4a"},
-    "文件": {".doc", ".docx", ".xls", ".xlsx", ".ppt", ".pptx", ".pdf",
-             ".zip", ".rar", ".7z", ".txt", ".csv"},
+    "文件": {".zip", ".rar", ".7z", ".txt", ".exe", ".apk", ".msi",
+             ".iso", ".dmg", ".torrent"},
     "聊天记录": {".db"},
 }
 
@@ -132,8 +158,16 @@ def find_app_roots(names, cancel, progress=None):
 
 
 def _classify_file(path: str):
-    """根据文件路径中的目录名与扩展名判定归属类别。"""
+    """根据扩展名与路径中的目录名判定归属类别。
+
+    v1.7.0：办公文档按扩展名**优先**判定 —— 微信把收发文件放在 File /
+    attachment 等目录，若先按目录名判定会把 docx/pdf 统统算成「文件」，
+    因此必须先识别 OFFICE_EXTS 归入「文档」，再走原有目录名/扩展名规则。
+    """
     low = path.lower().replace("/", "\\")
+    ext = os.path.splitext(low)[1]
+    if ext in OFFICE_EXTS:
+        return "文档"
     parts = [p for p in low.split("\\") if p]
     for part in reversed(parts[:-1]):
         cat = DIR_RULES.get(part)
@@ -141,7 +175,6 @@ def _classify_file(path: str):
             return cat
     if low.endswith(".dat"):
         return "缓存"
-    ext = os.path.splitext(low)[1]
     for cat, exts in EXT_RULES.items():
         if ext in exts:
             return cat
@@ -149,9 +182,9 @@ def _classify_file(path: str):
 
 
 def _build_items(roots, app, cancel, progress, scan_info=""):
-    """按 6 类聚合「所有数据目录」下的文件；每类产出一条 ScanItem。"""
+    """按 7 类聚合「所有数据目录」下的文件；每类产出一条 ScanItem。"""
     buckets = {
-        name: {"size": 0, "count": 0, "dirs": set()}
+        name: {"size": 0, "count": 0, "dirs": set(), "paths": []}
         for name, *_ in CATEGORIES
     }
     for root in roots:
@@ -167,16 +200,23 @@ def _build_items(roots, app, cancel, progress, scan_info=""):
                 sz = os.path.getsize(fp)
             except OSError:
                 continue
-            buckets[cat]["size"] += sz
-            buckets[cat]["count"] += 1
-            buckets[cat]["dirs"].add(os.path.dirname(fp))
+            b = buckets[cat]
+            b["size"] += sz
+            b["count"] += 1
+            b["dirs"].add(os.path.dirname(fp))
+            if cat in FILE_LEVEL_CATS:
+                b["paths"].append(fp)
 
     items = []
     for name, desc, risk, default_checked, no_clean in CATEGORIES:
         if progress:
             progress(f"正在统计：{app} · {name}")
         b = buckets[name]
-        files = sorted(b["dirs"]) if b["dirs"] else []
+        # 「文件」「文档」用精确文件路径，二者互不干扰；其余类别沿用目录。
+        if name in FILE_LEVEL_CATS:
+            files = sorted(set(b["paths"]))
+        else:
+            files = sorted(b["dirs"]) if b["dirs"] else []
         items.append(ScanItem(
             path=files[0] if files else "",
             name=f"{app} · {name}",

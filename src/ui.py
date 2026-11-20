@@ -4,7 +4,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-VERSION = "1.6.0"  # 版本号单一来源，app.py 与侧栏共用
+VERSION = "1.7.0"  # 版本号单一来源，app.py 与侧栏共用
 
 # ---------- 配色 ----------
 # 主题「精密仪器」：深墨蓝控制台侧栏 + 冷白数据区（自 v1.2.0 沿用至今）。
