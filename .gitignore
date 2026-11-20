@@ -33,3 +33,4 @@ DiskCleaner - 副本.exe
 # ---- 系统文件 ----
 Thumbs.db
 .DS_Store
+src/v160_*.png

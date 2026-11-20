@@ -4,7 +4,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-VERSION = "1.5.1"  # 版本号单一来源，app.py 与侧栏共用
+VERSION = "1.6.0"  # 版本号单一来源，app.py 与侧栏共用
 
 # ---------- 配色 ----------
 # 主题「精密仪器」：深墨蓝控制台侧栏 + 冷白数据区（自 v1.2.0 沿用至今）。
@@ -50,22 +50,25 @@ C = {
     "white": "#FFFFFF",
 }
 
+# v1.6.0：整体收紧字阶（正文 10→9、标题 22→17、最小 8），
+# 在保持中文可读性的前提下压缩主窗口所需空间。
 F = {
-    "logo": ("Microsoft YaHei UI", 16, "bold"),
-    "logo_sub": ("Microsoft YaHei UI", 9),
-    "title": ("Microsoft YaHei UI", 22, "bold"),
-    "subtitle": ("Microsoft YaHei UI", 10),
-    "nav": ("Microsoft YaHei UI", 10),
-    "nav_small": ("Microsoft YaHei UI", 9),
-    "card_label": ("Microsoft YaHei UI", 10),
-    "card_value": ("Microsoft YaHei UI", 22, "bold"),
-    "card_unit": ("Microsoft YaHei UI", 9),
-    "body": ("Microsoft YaHei UI", 10),
-    "body_bold": ("Microsoft YaHei UI", 10, "bold"),
-    "small": ("Microsoft YaHei UI", 9),
-    "btn": ("Microsoft YaHei UI", 10, "bold"),
-    "pill": ("Microsoft YaHei UI", 9, "bold"),
-    "admin": ("Microsoft YaHei UI", 9, "bold"),
+    "logo": ("Microsoft YaHei UI", 13, "bold"),
+    "logo_sub": ("Microsoft YaHei UI", 8),
+    "title": ("Microsoft YaHei UI", 17, "bold"),
+    "detail_title": ("Microsoft YaHei UI", 12, "bold"),
+    "subtitle": ("Microsoft YaHei UI", 9),
+    "nav": ("Microsoft YaHei UI", 9),
+    "nav_small": ("Microsoft YaHei UI", 8),
+    "card_label": ("Microsoft YaHei UI", 9),
+    "card_value": ("Microsoft YaHei UI", 17, "bold"),
+    "card_unit": ("Microsoft YaHei UI", 8),
+    "body": ("Microsoft YaHei UI", 9),
+    "body_bold": ("Microsoft YaHei UI", 9, "bold"),
+    "small": ("Microsoft YaHei UI", 8),
+    "btn": ("Microsoft YaHei UI", 9, "bold"),
+    "pill": ("Microsoft YaHei UI", 8, "bold"),
+    "admin": ("Microsoft YaHei UI", 8, "bold"),
 }
 
 NAV_ICONS = {
@@ -81,7 +84,7 @@ def setup_styles(root):
     except Exception:
         pass
     st.configure("Treeview", background=C["card"], fieldbackground=C["card"],
-                 foreground=C["text"], rowheight=34, borderwidth=0,
+                 foreground=C["text"], rowheight=26, borderwidth=0,
                  font=F["body"])
     st.configure("Treeview.Heading", background="#EDF2F9", foreground=C["text_sub"],
                  font=F["body_bold"], borderwidth=0, relief="flat")
@@ -97,7 +100,7 @@ def setup_styles(root):
 
 
 def flat_btn(parent, text, command, *, bg=None, fg=None, font=None,
-             padx=14, pady=6, active_bg=None, width=None):
+             padx=10, pady=4, active_bg=None, width=None):
     """扁平圆润按钮（tk.Button 实现，便于自定义配色）。"""
     bg = bg or C["primary"]
     fg = fg or C["white"]
@@ -109,7 +112,7 @@ def flat_btn(parent, text, command, *, bg=None, fg=None, font=None,
     )
 
 
-def ghost_btn(parent, text, command, *, padx=12, pady=6, font=None):
+def ghost_btn(parent, text, command, *, padx=9, pady=4, font=None):
     """白底描边按钮。"""
     b = tk.Button(
         parent, text=text, command=command, bg=C["card"], fg=C["text"],
@@ -135,7 +138,7 @@ class RoundButton(tk.Canvas):
     """
 
     def __init__(self, parent, text, command, *, variant="ghost",
-                 folder_icon=False, height=34, font=None, width=200):
+                 folder_icon=False, height=28, font=None, width=180):
         self._variant = variant
         self._folder = folder_icon
         self._text = text
@@ -241,7 +244,7 @@ def risk_pill(parent, text, level):
     }
     bg, fg = colors.get(level, (C["low_bg"], C["success"]))
     return tk.Label(parent, text=level, bg=bg, fg=fg, font=F["pill"],
-                    padx=9, pady=2)
+                    padx=7, pady=1)
 
 
 class Sidebar(tk.Frame):
@@ -249,7 +252,7 @@ class Sidebar(tk.Frame):
 
     def __init__(self, parent, nav_items, on_nav, copyright_lines, drives=None,
                  logo_path=None, on_about=None):
-        tk.Frame.__init__(self, parent, bg=C["sidebar"], width=232)
+        tk.Frame.__init__(self, parent, bg=C["sidebar"], width=188)
         self.pack_propagate(False)
         self.on_nav = on_nav
         self.nav_btns = {}
@@ -265,7 +268,7 @@ class Sidebar(tk.Frame):
     def _build(self, nav_items, copyright_lines, on_about):
         # Logo（图案与软件 icon 一致）
         logo = tk.Frame(self, bg=C["sidebar"])
-        logo.pack(fill="x", padx=18, pady=(14, 10))
+        logo.pack(fill="x", padx=12, pady=(10, 6))
         if self.logo_img is not None:
             tk.Label(logo, image=self.logo_img, bg=C["sidebar"]).pack(side="left")
         else:  # 图标加载失败时回退为绘制的圆形对勾
@@ -275,7 +278,7 @@ class Sidebar(tk.Frame):
             badge.create_line(10, 18, 16, 24, 25, 12, fill=C["white"], width=3,
                               capstyle="round", joinstyle="round")
         txt = tk.Frame(logo, bg=C["sidebar"])
-        txt.pack(side="left", padx=9)
+        txt.pack(side="left", padx=6)
         tk.Label(txt, text="DiskCleaner", bg=C["sidebar"], fg=C["sidebar_text"],
                  font=F["logo"]).pack(anchor="w")
         tk.Label(txt, text="磁盘清理助手", bg=C["sidebar"], fg=C["sidebar_sub"],
@@ -285,8 +288,8 @@ class Sidebar(tk.Frame):
         for key, label, icon in nav_items:
             btn = tk.Label(self, text=f"  {icon}   {label}", bg=C["sidebar"],
                            fg=C["sidebar_sub"], font=F["nav"], anchor="w",
-                           cursor="hand2", padx=14, pady=8)
-            btn.pack(fill="x", padx=12, pady=1)
+                           cursor="hand2", padx=10, pady=5)
+            btn.pack(fill="x", padx=8, pady=1)
             btn.bind("<Button-1>", lambda e, k=key: self.on_nav(k))
             btn.bind("<Enter>", lambda e, b=btn, k=key: self._nav_hover(b, k, True))
             btn.bind("<Leave>", lambda e, b=btn, k=key: self._nav_hover(b, k, False))
@@ -294,13 +297,13 @@ class Sidebar(tk.Frame):
 
         # 磁盘状态标题（可滚动区，盘符较多时不挤掉底部版权信息）
         tk.Label(self, text="本机磁盘状态", bg=C["sidebar"], fg=C["sidebar_sub"],
-                 font=F["body_bold"], anchor="w").pack(fill="x", padx=18, pady=(10, 4))
+                 font=F["body_bold"], anchor="w").pack(fill="x", padx=12, pady=(6, 2))
         self.disk_bars = {}
         disk_wrap = tk.Frame(self, bg=C["sidebar"])
-        disk_wrap.pack(fill="x", padx=14)
+        disk_wrap.pack(fill="x", padx=10)
 
         canvas = tk.Canvas(disk_wrap, bg=C["sidebar"], highlightthickness=0,
-                           width=180, height=196)
+                           width=148, height=150)
         vbar = ttk.Scrollbar(disk_wrap, orient="vertical", command=canvas.yview)
         disk_holder = tk.Frame(canvas, bg=C["sidebar"])
 
@@ -336,11 +339,11 @@ class Sidebar(tk.Frame):
         canvas.bind("<MouseWheel>", on_wheel)
         for drive in self.drives:
             row = tk.Frame(disk_holder, bg=C["sidebar"])
-            row.pack(fill="x", pady=(4, 0))
+            row.pack(fill="x", pady=(2, 0))
             lbl = tk.Label(row, text=f"{drive[0]}: 检测中…", bg=C["sidebar"],
                            fg=C["sidebar_sub"], font=F["small"], anchor="w")
             lbl.pack(fill="x")
-            pb = ttk.Progressbar(row, style="Sidebar.Horizontal.TProgressbar", length=186,
+            pb = ttk.Progressbar(row, style="Sidebar.Horizontal.TProgressbar", length=140,
                                  mode="determinate", maximum=100, value=0)
             pb.pack(fill="x", pady=(2, 0))
             total = tk.Label(row, text="", bg=C["sidebar"], fg=C["sidebar_mute"],
@@ -354,16 +357,16 @@ class Sidebar(tk.Frame):
 
         # 底部区域（版权 / 管理员 / 版本）
         bottom = tk.Frame(self, bg=C["sidebar"])
-        bottom.pack(side="bottom", fill="x", padx=18, pady=(0, 10))
+        bottom.pack(side="bottom", fill="x", padx=12, pady=(0, 6))
         sep = tk.Frame(bottom, bg=C["sidebar_line"], height=1)
-        sep.pack(fill="x", pady=(0, 8))
+        sep.pack(fill="x", pady=(0, 5))
         for line in copyright_lines:
             tk.Label(bottom, text=line, bg=C["sidebar"], fg=C["sidebar_sub"],
-                     font=F["small"], wraplength=200, justify="left").pack(anchor="w")
+                     font=F["small"], wraplength=160, justify="left").pack(anchor="w")
         tk.Label(bottom, text="●  已获得管理员权限", bg=C["sidebar"], fg=C["success"],
-                 font=F["admin"]).pack(anchor="w", pady=(8, 2))
+                 font=F["admin"]).pack(anchor="w", pady=(4, 1))
         tk.Label(bottom, text=f"DiskCleaner {VERSION}", bg=C["sidebar"], fg=C["sidebar_mute"],
-                 font=F["small"]).pack(anchor="w", pady=(6, 0))
+                 font=F["small"]).pack(anchor="w", pady=(3, 0))
 
     def _nav_hover(self, btn, key, entering):
         if key == getattr(self, "active_key", None):
@@ -376,7 +379,7 @@ class Sidebar(tk.Frame):
         for k, b in self.nav_btns.items():
             if k == key:
                 b.configure(bg=C["sidebar_active"], fg=C["white"],
-                            font=("Microsoft YaHei UI", 10, "bold"))
+                            font=("Microsoft YaHei UI", 9, "bold"))
             else:
                 b.configure(bg=C["sidebar"], fg=C["sidebar_sub"], font=F["nav"])
 
@@ -396,17 +399,17 @@ class Sidebar(tk.Frame):
 class StatCard(tk.Frame):
     """统计卡片：色点 + 大号数值 + 标签 + 子说明。"""
 
-    def __init__(self, parent, label, value, sub, dot_color, width=196):
+    def __init__(self, parent, label, value, sub, dot_color, width=158):
         tk.Frame.__init__(self, parent, bg=C["card"], highlightbackground=C["border"],
-                          highlightthickness=1, width=width, height=88)
+                          highlightthickness=1, width=width, height=68)
         self.pack_propagate(False)
         dot = tk.Canvas(self, width=10, height=10, bg=C["card"], highlightthickness=0)
-        dot.pack(anchor="w", padx=(15, 0), pady=(11, 0))
+        dot.pack(anchor="w", padx=(10, 0), pady=(7, 0))
         dot.create_oval(1, 1, 9, 9, fill=dot_color)
         tk.Label(self, text=label, bg=C["card"], fg=C["text_sub"],
-                 font=F["card_label"]).pack(anchor="w", padx=15)
+                 font=F["card_label"]).pack(anchor="w", padx=10)
         row = tk.Frame(self, bg=C["card"])
-        row.pack(fill="x", padx=15)
+        row.pack(fill="x", padx=10)
         tk.Label(row, text=value, bg=C["card"], fg=C["text"],
                  font=F["card_value"]).pack(side="left")
         tk.Label(row, text=f"  {sub}", bg=C["card"], fg=C["text_mute"],

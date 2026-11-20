@@ -6,7 +6,7 @@ from PIL import ImageGrab
 import app
 
 root = tk.Tk()
-root.geometry("1180x760")
+root.geometry("1000x620")
 root.title("DiskCleaner v%s" % app.VERSION)
 root.attributes("-topmost", True)
 a = app.App(root)

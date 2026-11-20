@@ -47,8 +47,8 @@ PAGE_META = {
                 "预读取文件(Prefetch)、缩略图缓存、图标缓存、系统临时文件、Windows 更新缓存、"
                 "Windows.old 残留目录、DirectX 着色器缓存、用户临时文件、浏览器缓存、系统错误报告。",
                 "仅列出扫描到内容的类别；每项标注风险等级与删除后果。驱动仓库等高风险项只统计不清理。"),
-    "wechat": ("微信专清", "独立页面：按图片/视频/音频/文件/缓存/聊天记录展示；聊天记录只统计不清理。", ""),
-    "wxwork": ("企业微信专清", "独立页面：按图片/视频/音频/文件/缓存/聊天记录展示；聊天记录只统计不清理。", ""),
+    "wechat": ("微信专清", "扫描所有本地磁盘中的 WeChat Files 数据目录，按图片/视频/音频/文件/缓存/聊天记录汇总；聊天记录只统计不清理。", ""),
+    "wxwork": ("企业微信专清", "扫描所有本地磁盘中的 WXWork 数据目录，按图片/视频/音频/文件/缓存/聊天记录汇总；聊天记录只统计不清理。", ""),
     "wps": ("WPS缓存专清", "枚举 Kingsoft 缓存目录，重点标注本地备份与云同步缓存；清理前可转存文档。", ""),
     "large": ("扫描大文件", "列出所选磁盘上的超大文件；双击可打开所在目录，勾选后可送入回收站。", ""),
     "log": ("日志", "所有扫描与清理动作的完整记录，同时写入本地日志文件。", ""),
@@ -81,6 +81,17 @@ def build_report(sections) -> str:
         total = sum(i.size for i in items)
         grand += total
         out.append(f"【{title}】 {len(items)} 项，合计 {human_size(total)}")
+        # v1.6.0：微信 / 企业微信报告里逐条列出所有本地磁盘上找到的数据目录
+        roots = []
+        for it in items:
+            for r in (getattr(it, "roots", None) or []):
+                if r not in roots:
+                    roots.append(r)
+        if roots:
+            out.append(f"  数据目录（共 {len(roots)} 个，跨全部本地磁盘）：")
+            for r in roots:
+                out.append(f"    · {r}")
+            out.append("")
         for it in items[:60]:
             out.append(f"  - {it.name} | {it.category} | {human_size(it.size)} | {it.file_count} 个文件")
             out.append(f"    {it.path or it.note}")
@@ -431,8 +442,8 @@ class App:
     def __init__(self, root):
         self.root = root
         root.title(f"{APP_NAME} v{VERSION} — 磁盘清理助手  |  任我行电脑工作室")
-        root.geometry("1180x760")
-        root.minsize(1040, 680)
+        root.geometry("1000x620")
+        root.minsize(960, 540)
         ico = resource_path("app.ico")
         if os.path.exists(ico):
             try:
@@ -479,13 +490,13 @@ class App:
         page = self.pages[key]["frame"]
         title, subtitle, _ = PAGE_META[key]
         hdr = tk.Frame(page, bg=C["page_bg"])
-        hdr.pack(fill="x", padx=26, pady=(22, 12))
+        hdr.pack(fill="x", padx=16, pady=(14, 8))
         left = tk.Frame(hdr, bg=C["page_bg"])
         left.pack(side="left", anchor="n")
         tk.Label(left, text=title, bg=C["page_bg"], fg=C["text"],
                  font=F["title"]).pack(anchor="w")
         tk.Label(left, text=subtitle, bg=C["page_bg"], fg=C["text_sub"],
-                 font=F["subtitle"], wraplength=560, justify="left").pack(anchor="w", pady=(4, 0))
+                 font=F["subtitle"], wraplength=460, justify="left").pack(anchor="w", pady=(2, 0))
         # 右侧工具区
         right = tk.Frame(hdr, bg=C["page_bg"])
         right.pack(side="right", anchor="n")
@@ -501,13 +512,13 @@ class App:
         right = self.pages[key]["header_right"]
         if scan_command is not None:
             flat_btn(right, "一键扫描", scan_command,
-                     bg=C["primary"], fg=C["white"]).pack(side="right", padx=6)
+                     bg=C["primary"], fg=C["white"]).pack(side="right", padx=4)
         flat_btn(right, "清理选中项", lambda: self.clean_selected(key),
-                 bg=C["danger"], fg=C["white"]).pack(side="right", padx=6)
+                 bg=C["danger"], fg=C["white"]).pack(side="right", padx=4)
         flat_btn(right, "全选", lambda: self.select_all(key, True),
-                 bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"]).pack(side="right", padx=6)
+                 bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"]).pack(side="right", padx=4)
         flat_btn(right, "取消全选", lambda: self.select_all(key, False),
-                 bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"]).pack(side="right", padx=6)
+                 bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"]).pack(side="right", padx=4)
         return right
 
     def _make_detail_panel(self, work, key):
@@ -516,18 +527,18 @@ class App:
         结构：detail(卡片) → actions(贴底) + scroller(可滚动内容区)
         scroller 内用 Canvas + 内部 Frame 承载全部文本，滚轮递归绑定到所有子控件。
         """
-        detail = card_frame(work, width=280, height=560)
-        detail.pack(side="right", fill="y", padx=(12, 0))
+        detail = card_frame(work, width=236)
+        detail.pack(side="right", fill="y", padx=(9, 0))
         detail.pack_propagate(False)  # 固定尺寸，避免空内容时塌成 1px 不可见
 
         # ---- 底部固定操作区（先 pack，始终贴底，不随内容滚动）----
         actions = tk.Frame(detail, bg=C["card"])
-        actions.pack(side="bottom", fill="x", padx=18, pady=(6, 12))
+        actions.pack(side="bottom", fill="x", padx=12, pady=(4, 8))
 
         dtoggle = RoundButton(actions, "选择此项",
                               lambda k=key: self._toggle_detail_item(k),
                               variant="soft")
-        dtoggle.pack(fill="x", pady=(0, 8), ipady=0)
+        dtoggle.pack(fill="x", pady=(0, 6), ipady=0)
         dtoggle.configure(state="disabled")
         dopen = RoundButton(actions, "打开所在文件夹",
                             lambda k=key: self._open_detail_folder(k),
@@ -549,7 +560,7 @@ class App:
 
         inner = tk.Frame(canvas, bg=C["card"])
         win = canvas.create_window((0, 0), window=inner, anchor="nw")
-        WL = 232  # 文本换行宽度（280 - 滚动条 8 - 左右留白 36 - 余量 4）
+        WL = 196  # 文本换行宽度（236 - 滚动条 8 - 左右留白 24 - 余量 8）
 
         def _sync_scroll(_e=None):
             try:
@@ -574,46 +585,46 @@ class App:
                 _bind_wheel(child)
 
         tk.Label(inner, text="项目详情", bg=C["card"], fg=C["text_mute"],
-                 font=F["small"]).pack(anchor="w", padx=18, pady=(14, 4))
+                 font=F["small"]).pack(anchor="w", padx=12, pady=(9, 3))
         dsel = tk.Label(inner, text="点击左侧项目查看详情", bg=C["card"],
                         fg=C["text_mute"], font=F["body"], wraplength=WL,
                         justify="left")
-        dsel.pack(anchor="w", padx=18, pady=(0, 12))
+        dsel.pack(anchor="w", padx=12, pady=(0, 8))
 
         meta = tk.Frame(inner, bg=C["card"])
-        meta.pack(anchor="w", padx=18, pady=(0, 12), fill="x")
-        dpill = tk.Canvas(meta, width=76, height=24, bg=C["card"],
+        meta.pack(anchor="w", padx=12, pady=(0, 8), fill="x")
+        dpill = tk.Canvas(meta, width=68, height=21, bg=C["card"],
                           highlightthickness=0)
         dpill.pack(side="left")
         self._draw_pill(dpill, "低风险")
         dsize = tk.Label(meta, text="—", bg=C["card"], fg=C["text"],
                          font=F["card_value"])
-        dsize.pack(side="left", padx=(12, 0))
+        dsize.pack(side="left", padx=(8, 0))
 
         tk.Label(inner, text="删除后果", bg=C["card"], fg=C["text_mute"],
-                 font=F["small"]).pack(anchor="w", padx=18)
+                 font=F["small"]).pack(anchor="w", padx=12)
         dconseq = tk.Label(inner, text="—", bg=C["card"], fg=C["text_sub"],
                            font=F["body"], wraplength=WL, justify="left")
-        dconseq.pack(anchor="w", padx=18, pady=(2, 10))
+        dconseq.pack(anchor="w", padx=12, pady=(2, 6))
 
         tk.Label(inner, text="建议", bg=C["card"], fg=C["text_mute"],
-                 font=F["small"]).pack(anchor="w", padx=18)
+                 font=F["small"]).pack(anchor="w", padx=12)
         dadvice = tk.Label(inner, text="—", bg=C["card"], fg=C["text_sub"],
                            font=F["body"], wraplength=WL, justify="left")
-        dadvice.pack(anchor="w", padx=18, pady=(2, 10))
+        dadvice.pack(anchor="w", padx=12, pady=(2, 6))
 
         tk.Label(inner, text="位置", bg=C["card"], fg=C["text_mute"],
-                 font=F["small"]).pack(anchor="w", padx=18)
+                 font=F["small"]).pack(anchor="w", padx=12)
         dpath = tk.Label(inner, text="—", bg=C["card"], fg=C["text_mute"],
                          font=F["small"], wraplength=WL, justify="left")
-        dpath.pack(anchor="w", padx=18, pady=(2, 8))
+        dpath.pack(anchor="w", padx=12, pady=(2, 6))
 
         if key == "wps":
             tk.Label(inner, text="长期方案：WPS → 备份中心 → 备份设置，"
                      "将本地备份目录改到 D 盘，避免 C 盘被占满。",
                      bg=C["tip_bg"], fg=C["tip_fg"], font=F["small"],
-                     wraplength=WL, justify="left", padx=8, pady=5).pack(
-                         fill="x", padx=18, pady=(0, 8))
+                     wraplength=WL, justify="left", padx=6, pady=4).pack(
+                         fill="x", padx=12, pady=(0, 6))
 
         # 所有文本控件创建完成后再递归绑定滚轮，确保覆盖每个 Label
         inner.update_idletasks()
@@ -633,16 +644,16 @@ class App:
         # 提示条
         tip = tk.Frame(page, bg=C["success_bg"], highlightbackground=C["success_border"],
                        highlightthickness=1)
-        tip.pack(fill="x", padx=26, pady=(0, 12))
+        tip.pack(fill="x", padx=16, pady=(0, 8))
         self.checkup_tip = tk.Label(tip, text="点击右上角「一键扫描」开始全盘扫描…",
                                     bg=C["success_bg"], fg=C["success"],
-                                    font=F["body"], anchor="w", padx=14, pady=8)
+                                    font=F["body"], anchor="w", padx=10, pady=5)
         self.checkup_tip.pack(fill="x")
         # v1.5.1：12 类均为 C 盘固定路径，原「扫描磁盘」勾选栏已移除。
         # _selected_drives("checkup") 固定返回 ["C:"]，供扫描弹窗标题与进度文案使用。
         # 统计卡片
         stats = tk.Frame(page, bg=C["page_bg"])
-        stats.pack(fill="x", padx=26, pady=(0, 12))
+        stats.pack(fill="x", padx=16, pady=(0, 8))
         self.stat_cards = {}
         for key, label, dot in (
             ("total", "可清理总量", C["primary"]),
@@ -650,21 +661,21 @@ class App:
             ("mid", "中风险", C["warning"]),
             ("high", "高风险", C["danger"]),
         ):
-            card = StatCard(stats, label, "0 B", "0 项", dot, width=196)
-            card.pack(side="left", padx=(0, 10))
+            card = StatCard(stats, label, "0 B", "0 项", dot, width=158)
+            card.pack(side="left", padx=(0, 7))
             self.stat_cards[key] = card
         # 常规清理表格区 + 项目详情面板（与其他功能页完全一致）
         work = tk.Frame(page, bg=C["page_bg"])
-        work.pack(fill="both", expand=True, padx=26, pady=(0, 20))
+        work.pack(fill="both", expand=True, padx=16, pady=(0, 12))
         d = self._make_detail_panel(work, "checkup")  # 详情先占位，避免被表格挤掉
         table_card = card_frame(work)
         table_card.pack(side="left", fill="both", expand=True)
         cols = ("sel", "name", "size", "risk", "conseq")
-        tree = ttk.Treeview(table_card, columns=cols, show="headings", height=18)
+        tree = ttk.Treeview(table_card, columns=cols, show="headings", height=14)
         for col, text, width in (
-            ("sel", "", 44), ("name", "清理项目", 150),
-            ("size", "大小 ▼", 78), ("risk", "风险", 66),
-            ("conseq", "删除后果", 220),
+            ("sel", "", 38), ("name", "清理项目", 132),
+            ("size", "大小 ▼", 68), ("risk", "风险", 56),
+            ("conseq", "删除后果", 182),
         ):
             tree.heading(col, text=text)
             tree.column(col, width=width, anchor="w")
@@ -702,7 +713,7 @@ class App:
 
         # 工具栏（磁盘/大小/时间范围等筛选项）
         bar = tk.Frame(page, bg=C["page_bg"])
-        bar.pack(fill="x", padx=26, pady=(0, 8))
+        bar.pack(fill="x", padx=16, pady=(0, 6))
         if key == "large":
             # 扫描范围：下拉菜单（盘符 + 可用空间），并保留「全部磁盘」
             drives = get_fixed_drives()
@@ -720,9 +731,9 @@ class App:
             mapping[all_label] = "__ALL__"
             dv = tk.StringVar(value=labels[1] if len(labels) > 1 else labels[0])
             tk.Label(bar, text="扫描范围", bg=C["page_bg"], fg=C["text_sub"],
-                     font=F["body"]).pack(side="left", padx=(0, 6))
+                     font=F["body"]).pack(side="left", padx=(0, 4))
             ttk.Combobox(bar, textvariable=dv, values=labels, state="readonly",
-                         width=20, font=F["body"]).pack(side="left")
+                         width=16, font=F["body"]).pack(side="left")
             self.pages[key]["drive_var"] = dv
             self.pages[key]["drive_labels"] = mapping
             self.pages[key]["all_drives"] = drives
@@ -730,10 +741,10 @@ class App:
             # 扫描动作统一由头部「一键扫描」发起；筛选栏只保留两个下拉，
             # 不再放置与头部重复的「扫描大文件」「暂停」按钮。
             tk.Label(bar, text="文件大小", bg=C["page_bg"], fg=C["text_sub"],
-                     font=F["body"]).pack(side="left", padx=(20, 6))
+                     font=F["body"]).pack(side="left", padx=(12, 4))
             sv = tk.StringVar(value="4G以上")
             ttk.Combobox(bar, textvariable=sv, values=SIZE_CHOICES,
-                         state="readonly", width=12, font=F["body"]).pack(side="left")
+                         state="readonly", width=10, font=F["body"]).pack(side="left")
             self.pages[key]["size_var"] = sv
         if key == "wps":
             af = tk.Frame(bar, bg=C["page_bg"])
@@ -742,31 +753,31 @@ class App:
                      font=F["body"]).pack(side="left")
             av = tk.StringVar(value="全部")
             ttk.Combobox(af, textvariable=av, values=list(AGE_MAP),
-                         state="readonly", width=9).pack(side="left")
+                         state="readonly", width=8).pack(side="left")
             self.pages[key]["age_var"] = av
 
         # 状态提示 + 已选（操作按钮已统一放到页面头部）
         statusbar = tk.Frame(page, bg=C["page_bg"])
-        statusbar.pack(fill="x", padx=26, pady=(0, 6))
+        statusbar.pack(fill="x", padx=16, pady=(0, 4))
         status = tk.Label(statusbar, text="等待扫描…", bg=C["page_bg"],
                           fg=C["text_sub"], font=F["small"], anchor="w")
         status.pack(side="left")
         sel_var = tk.StringVar(value="已选 0 项 / 0 B")
         tk.Label(statusbar, textvariable=sel_var, bg=C["page_bg"], fg=C["text"],
-                 font=F["body_bold"]).pack(side="left", padx=20)
+                 font=F["body_bold"]).pack(side="left", padx=12)
 
         # 表格 + 详情面板
         work = tk.Frame(page, bg=C["page_bg"])
-        work.pack(fill="both", expand=True, padx=26, pady=(0, 20))
+        work.pack(fill="both", expand=True, padx=16, pady=(0, 12))
         table_card = card_frame(work)
         # pack 顺序关键：右侧详情面板必须先占位，否则 expand=True 的表格会
         # 先抢光横向空间，把详情面板挤成 1px 而完全不可见。
         # 因此 table_card 的实际 pack 放在详情面板创建之后。
         cols = ("sel", "cat", "name", "size", "count", "path")
-        tree = ttk.Treeview(table_card, columns=cols, show="headings", height=18)
+        tree = ttk.Treeview(table_card, columns=cols, show="headings", height=14)
         heads = (
-            ("sel", "选择", 44), ("cat", "类别", 78), ("name", "清理项", 132),
-            ("size", "大小", 70), ("count", "文件数", 58), ("path", "路径 / 说明", 118),
+            ("sel", "选择", 38), ("cat", "类别", 66), ("name", "清理项", 112),
+            ("size", "大小", 68), ("count", "文件数", 52), ("path", "路径 / 说明", 156),
         )
         for col, text, width in heads:
             tree.heading(col, text=text)
@@ -795,19 +806,19 @@ class App:
         right = self.pages["log"]["header_right"]
         flat_btn(right, "清空显示", lambda: self._clear_log(),
                  bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"],
-                 padx=10, pady=5).pack(side="right", padx=5)
+                 padx=8, pady=4).pack(side="right", padx=4)
         flat_btn(right, "打开日志目录", lambda: self._open_log_dir(),
                  bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"],
-                 padx=10, pady=5).pack(side="right", padx=5)
+                 padx=8, pady=4).pack(side="right", padx=4)
         flat_btn(right, "复制全部", lambda: self._copy_log(),
                  bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"],
-                 padx=10, pady=5).pack(side="right", padx=5)
+                 padx=8, pady=4).pack(side="right", padx=4)
 
         box = card_frame(page)
-        box.pack(fill="both", expand=True, padx=26, pady=(0, 20))
+        box.pack(fill="both", expand=True, padx=16, pady=(0, 12))
         self.log_text = tk.Text(box, bg=C["log_bg"], fg=C["log_fg"],
-                                font=("Consolas", 9), relief="flat",
-                                insertbackground=C["log_fg"], padx=12, pady=10)
+                                font=("Consolas", 8), relief="flat",
+                                insertbackground=C["log_fg"], padx=9, pady=7)
         self.log_text.pack(fill="both", expand=True, padx=1, pady=1)
         self.pages["log"]["built"] = True
 
@@ -906,6 +917,8 @@ class App:
         if key == "large":
             drives = self._selected_drives("large")
             return f"正在扫描 {drives[0] if len(drives) == 1 else '所选磁盘'}"
+        if key in ("wechat", "wxwork"):
+            return f"正在扫描所有本地磁盘 · {PAGE_META[key][0]}"
         return f"正在扫描 {PAGE_META[key][0]}"
 
     def start_scan(self, key):
@@ -1008,6 +1021,26 @@ class App:
                     self._fill_tree(key, payload)
                     pg["status"].configure(text=f"扫描完成：{len(payload)} 项")
                     self.log(f"{PAGE_META[key][0]}：扫描完成，{len(payload)} 项")
+                    # v1.6.0：把跨磁盘找到的全部数据目录逐条写入日志与状态栏
+                    if key in ("wechat", "wxwork"):
+                        roots, info = [], ""
+                        for it in payload:
+                            info = info or getattr(it, "scan_info", "")
+                            for r in (getattr(it, "roots", None) or []):
+                                if r not in roots:
+                                    roots.append(r)
+                        if roots:
+                            letters = " ".join(sorted({r[:2].upper() for r in roots}))
+                            pg["status"].configure(
+                                text=f"扫描完成：{len(payload)} 项 · "
+                                     f"找到 {len(roots)} 个数据目录（{letters}）")
+                            self.log(f"{PAGE_META[key][0]}：共找到 {len(roots)} 个数据目录：")
+                            for r in roots:
+                                self.log(f"    {r}")
+                        else:
+                            self.log(f"{PAGE_META[key][0]}：未找到数据目录")
+                        if info:
+                            self.log(info)
                 elif kind == "error":
                     pg["scanning"] = False
                     self._close_scan_dialog(key)
@@ -1084,8 +1117,16 @@ class App:
                 values = (mark, it.name, human_size(it.size), risk,
                           getattr(it, "consequence_short", "") or "—")
             else:
+                desc = it.note or it.path
+                # v1.6.0：微信/企业微信在「路径 / 说明」列标注跨磁盘数据目录数量，
+                # 让用户一眼看到结果确实覆盖了所有本地磁盘，而非只有 C 盘。
+                if key in ("wechat", "wxwork"):
+                    rs = [r for r in (getattr(it, "roots", None) or []) if r]
+                    if rs:
+                        letters = " ".join(sorted({r[:2].upper() for r in rs}))
+                        desc = "%d 个数据目录 · %s" % (len(rs), letters)
                 values = (mark, it.category, it.name, human_size(it.size),
-                          it.file_count, it.note or it.path)
+                          it.file_count, desc)
             iid = tree.insert("", "end", values=values)
             tree.item(iid, tags=(risk,))
             pg["items"][iid] = it
@@ -1325,7 +1366,7 @@ class App:
             return
         pg["detail_iid"] = iid
         risk = self._risk_of(it)
-        pg["dsel"].configure(text=it.name, fg=C["text"], font=F["title"])
+        pg["dsel"].configure(text=it.name, fg=C["text"], font=F["detail_title"])
         pg["dsize"].configure(text=human_size(it.size))
         pg["dtoggle"].configure(
             state="disabled" if getattr(it, "no_clean", False) else "normal")
@@ -1334,8 +1375,13 @@ class App:
         conseq, advice = self._consequence(it)
         pg["dconseq"].configure(text=conseq, fg=C["text_sub"])
         pg["dadvice"].configure(text=advice, fg=C["text_sub"])
+        roots = [r for r in (getattr(it, "roots", None) or []) if r]
         paths = [p for p in (it.files or []) if p]
-        if it.path:
+        if roots:
+            # v1.6.0：逐条列出所有本地磁盘上找到的 WeChat Files / WXWork 目录
+            loc = "共找到 %d 个数据目录：\n%s" % (
+                len(roots), "\n".join(self._short_path(r, 52) for r in roots))
+        elif it.path:
             loc = self._short_path(it.path, 52)
             extra = [p for p in paths if p != it.path]
             if extra:

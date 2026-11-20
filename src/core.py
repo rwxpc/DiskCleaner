@@ -51,6 +51,10 @@ class ScanItem:
     consequence: str = ""
     advice: str = ""
     consequence_short: str = ""
+    # v1.6.0：微信/企业微信跨磁盘扫描结果。roots 为找到的全部数据根目录，
+    # scan_info 为诊断信息（如跳过的不可访问磁盘），供详情面板与日志展示。
+    roots: list[str] = field(default_factory=list)
+    scan_info: str = ""
 
 
 def human_size(n: float) -> str:
@@ -82,6 +86,28 @@ def get_fixed_drives() -> list[str]:
             if os.path.isdir(p):
                 drives.append(p)
     return drives
+
+
+def get_accessible_fixed_drives():
+    """返回 (可访问的本地固定磁盘, 被跳过的盘符)。
+
+    v1.6.0：多盘环境下部分盘符可能是未解锁的 BitLocker、RAW 分区、
+    未就绪的读卡器或断开的映射盘，对它们 os.listdir 会抛
+    PermissionError / FileNotFoundError / OSError。这里逐个验证就绪性与
+    访问权限，跳过不可访问盘，保证其余磁盘照常扫描。
+    """
+    accessible, skipped = [], []
+    for drive in get_fixed_drives():
+        try:
+            if not os.path.isdir(drive):
+                skipped.append(drive)
+                continue
+            os.listdir(drive)
+        except (OSError, PermissionError):
+            skipped.append(drive)
+            continue
+        accessible.append(drive)
+    return accessible, skipped
 
 
 def is_reparse(path: str) -> bool:
@@ -355,26 +381,51 @@ def is_document(path: str) -> bool:
 def scan_directory_names(roots: Iterable[str], names: set[str],
                          cancel: Callable[[], bool] | None = None,
                          max_depth: int = 8) -> list[str]:
-    """在给定根目录（磁盘）下按目录名查找，返回匹配目录的完整路径。"""
+    """在给定根目录（磁盘）下按目录名查找，返回匹配目录的完整路径。
+
+    v1.6.0：
+      * 命中目录加入结果后不再深入其内部，避免遍历庞大的微信数据目录；
+      * os.walk 传入 onerror，无权限 / 不可访问目录静默跳过，不中断本盘扫描；
+      * 每个根目录独立 try/except，单盘失败不影响其余磁盘。
+    """
     found: list[str] = []
     seen: set[str] = set()
+    low_names = {n.lower() for n in names}
+
+    def _onerror(_exc):
+        return None
+
     for root in roots:
+        try:
+            if not os.path.isdir(root):
+                continue
+        except (OSError, PermissionError):
+            continue
         base_depth = root.rstrip("\\/").count("\\")
-        for cur, dirs, _ in os.walk(root, topdown=True, followlinks=False):
-            if cancel and cancel():
-                return found
-            dirs[:] = [
-                d for d in dirs
-                if d.lower() in names
-                or ((cur.count("\\") - base_depth) < max_depth
-                    and not is_reparse(os.path.join(cur, d))
-                    and not should_skip(os.path.join(cur, d)))
-            ]
-            for d in list(dirs):
-                if d.lower() in names:
+        try:
+            for cur, dirs, _ in os.walk(root, topdown=True,
+                                        followlinks=False, onerror=_onerror):
+                if cancel and cancel():
+                    return found
+                depth = cur.count("\\") - base_depth
+                keep = []
+                for d in dirs:
                     full = os.path.join(cur, d)
-                    low = full.lower()
-                    if low not in seen:
-                        seen.add(low)
-                        found.append(full)
+                    if d.lower() in low_names:
+                        low = os.path.normcase(os.path.abspath(full))
+                        if low not in seen:
+                            seen.add(low)
+                            found.append(full)
+                        continue  # 命中后不再深入
+                    if depth >= max_depth:
+                        continue
+                    try:
+                        if is_reparse(full) or should_skip(full):
+                            continue
+                    except (OSError, PermissionError):
+                        continue
+                    keep.append(d)
+                dirs[:] = keep
+        except (OSError, PermissionError):
+            continue
     return found
