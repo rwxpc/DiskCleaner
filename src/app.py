@@ -638,19 +638,8 @@ class App:
                                     bg=C["success_bg"], fg=C["success"],
                                     font=F["body"], anchor="w", padx=14, pady=8)
         self.checkup_tip.pack(fill="x")
-        # 全盘扫描磁盘选择（原「全盘扫描」模块已整合至此）
-        drive_bar = tk.Frame(page, bg=C["page_bg"])
-        drive_bar.pack(fill="x", padx=26, pady=(0, 10))
-        tk.Label(drive_bar, text="扫描磁盘：", bg=C["page_bg"], fg=C["text_sub"],
-                 font=F["body"]).pack(side="left")
-        dvars = []
-        for d in get_fixed_drives():
-            v = tk.BooleanVar(value=True)
-            tk.Checkbutton(drive_bar, text=d, variable=v, bg=C["page_bg"],
-                           fg=C["text"], font=F["small"], activebackground=C["page_bg"],
-                           selectcolor=C["primary"]).pack(side="left", padx=3)
-            dvars.append((d, v))
-        self.pages["checkup"]["drive_vars"] = dvars
+        # v1.5.1：12 类均为 C 盘固定路径，原「扫描磁盘」勾选栏已移除。
+        # _selected_drives("checkup") 固定返回 ["C:"]，供扫描弹窗标题与进度文案使用。
         # 统计卡片
         stats = tk.Frame(page, bg=C["page_bg"])
         stats.pack(fill="x", padx=26, pady=(0, 12))
@@ -681,13 +670,24 @@ class App:
             tree.column(col, width=width, anchor="w")
         tree.heading("size", command=lambda: self._sort_by_size("checkup"))
         vsb = ttk.Scrollbar(table_card, orient="vertical", command=tree.yview)
-        tree.configure(yscrollcommand=vsb.set)
+        # 滚动时同步重绘风险列彩色文字覆盖层
+        tree.configure(yscrollcommand=lambda *a: (
+            vsb.set(*a), self._redraw_risk_overlay("checkup")))
         tree.pack(side="left", fill="both", expand=True, padx=(1, 0), pady=1)
         vsb.pack(side="right", fill="y")
         tree.bind("<Button-1>", lambda e, k="checkup": self._on_tree_click(k, e))
         tree.bind("<<TreeviewSelect>>", lambda e, k="checkup": self._on_tree_select(k, e))
+        tree.bind("<Configure>", lambda e: self._redraw_risk_overlay("checkup"))
+        # v1.5.1：Tk 8.6.9 的 ttk.Treeview 不渲染 tag 的 foreground/background，
+        # 风险列文字改由这个 Canvas 覆盖层自绘，保证低/中/高风险为绿/黄/红。
+        risk_ov = tk.Canvas(table_card, bg=C["card"], highlightthickness=0, bd=0)
+        risk_ov.bind("<Button-1>",
+                     lambda e: self._on_risk_overlay_click("checkup", e))
+        risk_ov.bind("<MouseWheel>",
+                     lambda e: self._on_risk_overlay_wheel("checkup", e))
         self.pages["checkup"].update(
             built=True, tree=tree, items={}, checked={},
+            risk_overlay=risk_ov, risk_header_h=None,
             queue=queue.Queue(), cancel=threading.Event(), scanning=False, **d,
         )
 
@@ -937,6 +937,10 @@ class App:
             pg["tree"].delete(iid)
         pg["items"].clear()
         pg["checked"].clear()
+        ov = pg.get("risk_overlay")
+        if ov:
+            ov.delete("all")
+            ov.place_forget()
         self.checkup_tip.configure(text="正在全盘扫描 12 类垃圾，请稍候…", fg=C["warning"])
         # 主线程先读取 Tk 变量
         pg["selected_drives"] = self._selected_drives("checkup")
@@ -961,7 +965,7 @@ class App:
         all_items = []
         drives = pg.get("selected_drives") or get_fixed_drives()
         try:
-            report(f"正在扫描磁盘：{', '.join(drives)}")
+            report("正在扫描 C 盘 12 类可清理项…")
             all_items = disktools.scan_junk(drives, cancel, report)
         except Exception as exc:
             pg["queue"].put(("error", f"全盘垃圾: {exc}"))
@@ -1086,21 +1090,24 @@ class App:
             tree.item(iid, tags=(risk,))
             pg["items"][iid] = it
             pg["checked"][iid] = it.default_checked
-        if key == "checkup":
-            for level, bg in (("低风险", C["low_bg"]),
-                              ("中风险", C["mid_bg"]),
-                              ("高风险", C["high_bg"])):
-                tree.tag_configure(level, background=bg, foreground=C["text"])
-        else:
-            tree.tag_configure("低风险", foreground=C["success"])
-            tree.tag_configure("中风险", foreground=C["warning"])
-            tree.tag_configure("高风险", foreground=C["danger"])
+        # 风险等级 tag：保留作数据标注（其他页面沿用）。
+        # 注意：Tk 8.6.9 的 ttk.Treeview 不渲染 tag 的 foreground/background，
+        # 常规清理页的彩色文字由 _redraw_risk_overlay 的 Canvas 覆盖层绘制。
+        for level, fg, bg in (("低风险", C["success"], C["low_bg"]),
+                              ("中风险", C["warning"], C["mid_bg"]),
+                              ("高风险", C["danger"], C["high_bg"])):
+            if key == "checkup":
+                tree.tag_configure(level, background=bg, foreground=fg)
+            else:
+                tree.tag_configure(level, foreground=fg)
         self._update_selected(key)
         first = tree.get_children()
         if first:
             self._show_detail(key, first[0])
         else:
             self._clear_detail(key)
+        if key == "checkup":
+            self._redraw_risk_overlay(key)
 
     def _on_tree_click(self, key, event):
         """点击任意列都刷新详情；只有点「选择」列才切换勾选。"""
@@ -1124,6 +1131,82 @@ class App:
         sel = tree.selection()
         if sel:
             self._show_detail(key, sel[0])
+        if key == "checkup":
+            self._redraw_risk_overlay(key)
+
+    # ---------- v1.5.1 风险列彩色文字覆盖层 ----------
+    def _redraw_risk_overlay(self, key):
+        """Tk 8.6.9 下 Treeview 的 tag 前景/背景不渲染，风险列文字由 Canvas 自绘。"""
+        pg = self.pages[key]
+        tree, ov = pg["tree"], pg.get("risk_overlay")
+        if ov is None or pg.get("_risk_redrawing"):
+            return
+        pg["_risk_redrawing"] = True
+        try:
+            tree.update_idletasks()
+            rows = tree.get_children()
+            if not rows:
+                ov.delete("all"); ov.place_forget()
+                return
+            box = None
+            for iid in rows:
+                box = tree.bbox(iid, "risk")
+                if box:
+                    break
+            if not box:
+                ov.delete("all"); ov.place_forget()
+                return
+            col_x, _vy, col_w, _rh = box
+            if pg.get("risk_header_h") is None:
+                first = tree.bbox(rows[0], "risk")
+                pg["risk_header_h"] = first[1] if first else 0
+            header_h = pg["risk_header_h"]
+            height = tree.winfo_height() - header_h
+            if height <= 0:
+                return
+            ov.place(in_=tree, x=col_x, y=header_h, width=col_w, height=height)
+            ov.delete("all")
+            sel_bg = (ttk.Style().lookup("Treeview", "background", ["selected"])
+                      or C["primary"])
+            fg_map = {"低风险": C["success"], "中风险": C["warning"],
+                      "高风险": C["danger"]}
+            selected = set(tree.selection())
+            for iid in rows:
+                b = tree.bbox(iid, "risk")
+                if not b:
+                    continue
+                it = pg["items"].get(iid)
+                if it is None:
+                    continue
+                _x, y, _w, rh = b
+                cy = y - header_h
+                # 只画完全可见的行，避免部分可见行在表格底边露出彩色残影
+                if cy < 0 or cy + rh > height - 2:
+                    continue
+                risk = self._risk_of(it)
+                picked = iid in selected
+                ov.create_rectangle(0, cy, col_w, cy + rh,
+                                    fill=sel_bg if picked else C["card"], outline="")
+                ov.create_text(8, cy + rh / 2, text=risk, anchor="w",
+                               fill=fg_map.get(risk, C["text"]), font=F["body"])
+        finally:
+            pg["_risk_redrawing"] = False
+
+    def _on_risk_overlay_click(self, key, event):
+        """覆盖层会拦截点击，这里转发为「选中该行并刷新详情」。"""
+        pg = self.pages[key]
+        tree = pg["tree"]
+        iid = tree.identify_row(event.y + (pg.get("risk_header_h") or 0))
+        if iid:
+            tree.selection_set(iid)
+            tree.focus(iid)
+            self._show_detail(key, iid)
+            self._redraw_risk_overlay(key)
+
+    def _on_risk_overlay_wheel(self, key, event):
+        """覆盖层转发滚轮，保持表格可滚动。"""
+        self.pages[key]["tree"].yview_scroll(
+            -1 if event.delta > 0 else 1, "units")
 
     @staticmethod
     def _short_path(p, limit=96):
@@ -1284,6 +1367,9 @@ class App:
 
     def _selected_drives(self, key):
         pg = self.pages[key]
+        if key == "checkup":
+            # v1.5.1：勾选栏已移除，12 类均为 C 盘固定路径，固定返回 C:。
+            return ["C:"]
         if key == "large" and "drive_labels" in pg:
             d = pg["drive_labels"].get(pg["drive_var"].get())
             if d == "__ALL__":
