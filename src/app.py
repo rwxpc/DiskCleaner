@@ -43,9 +43,10 @@ NAV = [
 ]
 
 PAGE_META = {
-    "checkup": ("常规清理", "全盘扫描 6 类系统缓存/临时文件：用户临时文件、Gradle 缓存、"
-                "系统临时文件、pip 缓存、npm 缓存、Chrome 缓存（不含回收站）。",
-                "先扫描，再按风险勾选清理；各专清模块互不干扰。清理项一律送入回收站，可随时还原。"),
+    "checkup": ("常规清理", "逐项列出 C 盘 12 类可清理项：临时文件和日志文件、设备驱动程序文件、"
+                "预读取文件(Prefetch)、缩略图缓存、图标缓存、系统临时文件、Windows 更新缓存、"
+                "Windows.old 残留目录、DirectX 着色器缓存、用户临时文件、浏览器缓存、系统错误报告。",
+                "仅列出扫描到内容的类别；每项标注风险等级与删除后果。驱动仓库等高风险项只统计不清理。"),
     "wechat": ("微信专清", "独立页面：按图片/视频/音频/文件/缓存/聊天记录展示；聊天记录只统计不清理。", ""),
     "wxwork": ("企业微信专清", "独立页面：按图片/视频/音频/文件/缓存/聊天记录展示；聊天记录只统计不清理。", ""),
     "wps": ("WPS缓存专清", "枚举 Kingsoft 缓存目录，重点标注本地备份与云同步缓存；清理前可转存文档。", ""),
@@ -669,11 +670,12 @@ class App:
         d = self._make_detail_panel(work, "checkup")  # 详情先占位，避免被表格挤掉
         table_card = card_frame(work)
         table_card.pack(side="left", fill="both", expand=True)
-        cols = ("sel", "name", "size", "risk")
+        cols = ("sel", "name", "size", "risk", "conseq")
         tree = ttk.Treeview(table_card, columns=cols, show="headings", height=18)
         for col, text, width in (
-            ("sel", "", 52), ("name", "清理项目", 230),
-            ("size", "大小 ▼", 110), ("risk", "风险", 100),
+            ("sel", "", 44), ("name", "清理项目", 150),
+            ("size", "大小 ▼", 78), ("risk", "风险", 66),
+            ("conseq", "删除后果", 220),
         ):
             tree.heading(col, text=text)
             tree.column(col, width=width, anchor="w")
@@ -894,7 +896,7 @@ class App:
 
     # 各扫描入口的预计阶段数（用于弹窗 i/total；仅影响展示，不影响扫描范围）
     SCAN_TOTAL = {
-        "checkup": 6, "wechat": 7, "wxwork": 7, "wps": 8, "large": 4,
+        "checkup": 12, "wechat": 7, "wxwork": 7, "wps": 8, "large": 4,
     }
 
     def _scan_title(self, key):
@@ -927,7 +929,7 @@ class App:
         threading.Thread(target=self._worker, args=(key,), daemon=True).start()
 
     def start_checkup(self):
-        """一键全盘扫描 6 类垃圾，汇总到常规清理表格（不含其他专清模块）。"""
+        """一键全盘扫描 12 类垃圾，汇总到常规清理表格（不含其他专清模块）。"""
         pg = self.pages["checkup"]
         pg["cancel"].clear()
         pg["scanning"] = True
@@ -935,18 +937,18 @@ class App:
             pg["tree"].delete(iid)
         pg["items"].clear()
         pg["checked"].clear()
-        self.checkup_tip.configure(text="正在全盘扫描 6 类垃圾，请稍候…", fg=C["warning"])
+        self.checkup_tip.configure(text="正在全盘扫描 12 类垃圾，请稍候…", fg=C["warning"])
         # 主线程先读取 Tk 变量
         pg["selected_drives"] = self._selected_drives("checkup")
         dlg = ScanProgressDialog(
             self.root, self._scan_title("checkup"), self.SCAN_TOTAL["checkup"],
             cancel_callback=lambda: pg["cancel"].set())
         pg["scan_dialog"] = dlg
-        self.log("常规清理：开始全盘扫描（6 类垃圾）")
+        self.log("常规清理：开始全盘扫描（12 类垃圾）")
         threading.Thread(target=self._checkup_worker, daemon=True).start()
 
     def _checkup_worker(self):
-        """仅扫描图2列出的 6 类垃圾；不触碰微信/企业微信/WPS/扫描大文件等专清模块。"""
+        """仅扫描图2列出的 12 类垃圾；不触碰微信/企业微信/WPS/扫描大文件等专清模块。"""
         pg = self.pages["checkup"]
         cancel = lambda: pg["cancel"].is_set()
 
@@ -1070,9 +1072,13 @@ class App:
         pg["checked"].clear()
         for it in items:
             risk = self._risk_of(it)
-            mark = "☑" if it.default_checked else "☐"
+            if getattr(it, "no_clean", False):
+                mark = "—"  # 只统计不清理，禁止勾选
+            else:
+                mark = "☑" if it.default_checked else "☐"
             if key == "checkup":
-                values = (mark, it.name, human_size(it.size), risk)
+                values = (mark, it.name, human_size(it.size), risk,
+                          getattr(it, "consequence_short", "") or "—")
             else:
                 values = (mark, it.category, it.name, human_size(it.size),
                           it.file_count, it.note or it.path)
@@ -1106,6 +1112,8 @@ class App:
             return
         self._show_detail(key, iid)
         if tree.identify_column(event.x) == "#1":
+            if getattr(pg["items"].get(iid), "no_clean", False):
+                return  # 只统计不清理的项目不参与勾选
             new = not pg["checked"].get(iid, False)
             pg["checked"][iid] = new
             tree.set(iid, "sel", "☑" if new else "☐")
@@ -1177,7 +1185,10 @@ class App:
 
     @staticmethod
     def _consequence(it):
-        """按项目类型给出「删除后果 / 建议」文案（参考设计稿）。"""
+        """优先使用扫描项自带的逐项文案，否则按类型推断（兼容其他模块）。"""
+        custom = getattr(it, "consequence", "")
+        if custom:
+            return (custom, getattr(it, "advice", "") or "建议先确认内容再清理。")
         name = it.name
         if getattr(it, "no_clean", False):
             return ("该类仅用于统计，不参与清理，不会被删除。",
@@ -1233,7 +1244,8 @@ class App:
         risk = self._risk_of(it)
         pg["dsel"].configure(text=it.name, fg=C["text"], font=F["title"])
         pg["dsize"].configure(text=human_size(it.size))
-        pg["dtoggle"].configure(state="normal")
+        pg["dtoggle"].configure(
+            state="disabled" if getattr(it, "no_clean", False) else "normal")
         pg["dopen"].configure(state="normal")
         self._draw_pill(pg["dpill"], risk)
         conseq, advice = self._consequence(it)
@@ -1283,7 +1295,11 @@ class App:
 
     def select_all(self, key, value):
         pg = self.pages[key]
-        for iid in pg["items"]:
+        for iid, it in pg["items"].items():
+            if getattr(it, "no_clean", False):
+                pg["checked"][iid] = False
+                pg["tree"].set(iid, "sel", "—")
+                continue
             pg["checked"][iid] = value
             pg["tree"].set(iid, "sel", "☑" if value else "☐")
         self._update_selected(key)

@@ -16,6 +16,7 @@ src/v131_*.png
 src/v132_*.png
 src/v140_*.png
 src/v141_*.png
+src/v150_*.png
 src/DiskCleaner_扫描报告_*.txt
 *.log
 *.tmp
