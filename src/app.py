@@ -493,20 +493,74 @@ class App:
         return right
 
     def _make_detail_panel(self, work, key):
-        """右侧「项目详情」面板（参考设计稿）：标题 / 风险胶囊 + 大小 / 删除后果 /
-        建议 / 位置 / 两个操作按钮，全部随表格选中项动态变化。"""
+        """右侧「项目详情」面板：内容区可滚动、底部两个按钮固定不随滚动。
+
+        结构：detail(卡片) → actions(贴底) + scroller(可滚动内容区)
+        scroller 内用 Canvas + 内部 Frame 承载全部文本，滚轮递归绑定到所有子控件。
+        """
         detail = card_frame(work, width=280, height=560)
         detail.pack(side="right", fill="y", padx=(12, 0))
         detail.pack_propagate(False)  # 固定尺寸，避免空内容时塌成 1px 不可见
 
-        tk.Label(detail, text="项目详情", bg=C["card"], fg=C["text_mute"],
-                 font=F["small"]).pack(anchor="w", padx=18, pady=(16, 4))
-        dsel = tk.Label(detail, text="点击左侧项目查看详情", bg=C["card"],
-                        fg=C["text_mute"], font=F["body"], wraplength=244,
-                        justify="left")
-        dsel.pack(anchor="w", padx=18, pady=(0, 14))
+        # ---- 底部固定操作区（先 pack，始终贴底，不随内容滚动）----
+        actions = tk.Frame(detail, bg=C["card"])
+        actions.pack(side="bottom", fill="x", padx=18, pady=(6, 12))
 
-        meta = tk.Frame(detail, bg=C["card"])
+        dtoggle = ghost_btn(actions, "选择此项",
+                            lambda k=key: self._toggle_detail_item(k))
+        dtoggle.pack(fill="x", pady=(0, 6))
+        dtoggle.configure(state="disabled")
+        dopen = ghost_btn(actions, "📁 打开所在文件夹",
+                          lambda k=key: self._open_detail_folder(k))
+        dopen.pack(fill="x")
+        dopen.configure(state="disabled")
+
+        # ---- 可滚动内容区 ----
+        scroller = tk.Frame(detail, bg=C["card"])
+        scroller.pack(side="top", fill="both", expand=True)
+        canvas = tk.Canvas(scroller, bg=C["card"], highlightthickness=0, bd=0)
+        canvas.pack(side="left", fill="both", expand=True)
+        vbar = tk.Scrollbar(scroller, orient="vertical", command=canvas.yview,
+                            width=8, bg=C["border"], troughcolor=C["card"],
+                            activebackground=C["neutral_hover"],
+                            highlightthickness=0)
+        vbar.pack(side="right", fill="y")
+        canvas.configure(yscrollcommand=vbar.set)
+
+        inner = tk.Frame(canvas, bg=C["card"])
+        win = canvas.create_window((0, 0), window=inner, anchor="nw")
+        WL = 232  # 文本换行宽度（280 - 滚动条 8 - 左右留白 36 - 余量 4）
+
+        def _sync_scroll(_e=None):
+            try:
+                canvas.configure(scrollregion=canvas.bbox("all"))
+            except Exception:
+                pass
+
+        def _sync_width(_e=None):
+            w = canvas.winfo_width()
+            if w > 1:
+                canvas.itemconfigure(win, width=w)
+
+        inner.bind("<Configure>", _sync_scroll, add="+")
+        canvas.bind("<Configure>", _sync_width, add="+")
+
+        def _on_wheel(event):
+            canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+        def _bind_wheel(widget):
+            widget.bind("<MouseWheel>", _on_wheel)
+            for child in widget.winfo_children():
+                _bind_wheel(child)
+
+        tk.Label(inner, text="项目详情", bg=C["card"], fg=C["text_mute"],
+                 font=F["small"]).pack(anchor="w", padx=18, pady=(14, 4))
+        dsel = tk.Label(inner, text="点击左侧项目查看详情", bg=C["card"],
+                        fg=C["text_mute"], font=F["body"], wraplength=WL,
+                        justify="left")
+        dsel.pack(anchor="w", padx=18, pady=(0, 12))
+
+        meta = tk.Frame(inner, bg=C["card"])
         meta.pack(anchor="w", padx=18, pady=(0, 12), fill="x")
         dpill = tk.Canvas(meta, width=76, height=24, bg=C["card"],
                           highlightthickness=0)
@@ -516,43 +570,42 @@ class App:
                          font=F["card_value"])
         dsize.pack(side="left", padx=(12, 0))
 
-        tk.Label(detail, text="删除后果", bg=C["card"], fg=C["text_mute"],
+        tk.Label(inner, text="删除后果", bg=C["card"], fg=C["text_mute"],
                  font=F["small"]).pack(anchor="w", padx=18)
-        dconseq = tk.Label(detail, text="—", bg=C["card"], fg=C["text_sub"],
-                           font=F["body"], wraplength=244, justify="left")
+        dconseq = tk.Label(inner, text="—", bg=C["card"], fg=C["text_sub"],
+                           font=F["body"], wraplength=WL, justify="left")
         dconseq.pack(anchor="w", padx=18, pady=(2, 10))
 
-        tk.Label(detail, text="建议", bg=C["card"], fg=C["text_mute"],
+        tk.Label(inner, text="建议", bg=C["card"], fg=C["text_mute"],
                  font=F["small"]).pack(anchor="w", padx=18)
-        dadvice = tk.Label(detail, text="—", bg=C["card"], fg=C["text_sub"],
-                           font=F["body"], wraplength=244, justify="left")
+        dadvice = tk.Label(inner, text="—", bg=C["card"], fg=C["text_sub"],
+                           font=F["body"], wraplength=WL, justify="left")
         dadvice.pack(anchor="w", padx=18, pady=(2, 10))
 
-        tk.Label(detail, text="位置", bg=C["card"], fg=C["text_mute"],
+        tk.Label(inner, text="位置", bg=C["card"], fg=C["text_mute"],
                  font=F["small"]).pack(anchor="w", padx=18)
-        dpath = tk.Label(detail, text="—", bg=C["card"], fg=C["text_mute"],
-                         font=F["small"], wraplength=244, justify="left")
+        dpath = tk.Label(inner, text="—", bg=C["card"], fg=C["text_mute"],
+                         font=F["small"], wraplength=WL, justify="left")
         dpath.pack(anchor="w", padx=18, pady=(2, 8))
 
         if key == "wps":
-            tk.Label(detail, text="长期方案：WPS → 备份中心 → 备份设置，"
+            tk.Label(inner, text="长期方案：WPS → 备份中心 → 备份设置，"
                      "将本地备份目录改到 D 盘，避免 C 盘被占满。",
                      bg=C["tip_bg"], fg=C["tip_fg"], font=F["small"],
-                     wraplength=244, justify="left", padx=8, pady=5).pack(
+                     wraplength=WL, justify="left", padx=8, pady=5).pack(
                          fill="x", padx=18, pady=(0, 8))
 
-        dtoggle = ghost_btn(detail, "选择此项",
-                            lambda k=key: self._toggle_detail_item(k))
-        dtoggle.pack(fill="x", padx=18, pady=(4, 3))
-        dtoggle.configure(state="disabled")
-        dopen = ghost_btn(detail, "打开所在文件夹",
-                          lambda k=key: self._open_detail_folder(k))
-        dopen.pack(fill="x", padx=18, pady=(0, 10))
-        dopen.configure(state="disabled")
+        # 所有文本控件创建完成后再递归绑定滚轮，确保覆盖每个 Label
+        inner.update_idletasks()
+        _bind_wheel(inner)
+        _sync_width()
+        _sync_scroll()
 
         return dict(detail=detail, dsel=dsel, dpill=dpill, dsize=dsize,
                     dconseq=dconseq, dadvice=dadvice, dpath=dpath,
-                    dtoggle=dtoggle, dopen=dopen, detail_iid=None)
+                    dtoggle=dtoggle, dopen=dopen,
+                    detail_canvas=canvas, detail_scrollbar=vbar,
+                    detail_inner=inner, detail_iid=None)
 
     def _build_checkup(self):
         page = self.pages["checkup"]["frame"]
@@ -1159,6 +1212,19 @@ class App:
         pg["dpath"].configure(text="—")
         pg["dtoggle"].configure(text="选择此项", state="disabled")
         pg["dopen"].configure(state="disabled")
+        self._refresh_detail_scroll(pg)
+
+    def _refresh_detail_scroll(self, pg):
+        """内容变化后同步滚动区域并回到顶部，保证长文本可滚动查看。"""
+        cv, inner = pg.get("detail_canvas"), pg.get("detail_inner")
+        if cv is None or inner is None:
+            return
+        try:
+            inner.update_idletasks()
+            cv.configure(scrollregion=cv.bbox("all"))
+            cv.yview_moveto(0)
+        except Exception:
+            pass
 
     def _show_detail(self, key, iid):
         """把选中项的名称/风险/大小/删除后果/建议/真实位置写入详情面板。"""
@@ -1192,6 +1258,7 @@ class App:
         pg["dpath"].configure(text=loc)
         pg["dtoggle"].configure(
             text="取消选择此项" if pg["checked"].get(iid) else "选择此项")
+        self._refresh_detail_scroll(pg)
 
     def _open_location(self, key, event):
         pg, tree = self.pages[key], self.pages[key]["tree"]
