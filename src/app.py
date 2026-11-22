@@ -88,7 +88,7 @@ def build_report(sections) -> str:
                 if r not in roots:
                     roots.append(r)
         if roots:
-            out.append(f"  数据目录（共 {len(roots)} 个，跨全部本地磁盘）：")
+            out.append(f"  数据目录（共 {len(roots)} 个）：")
             for r in roots:
                 out.append(f"    · {r}")
             out.append("")

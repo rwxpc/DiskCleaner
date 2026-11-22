@@ -51,27 +51,52 @@ def _browser_paths():
 
 
 def _install_residue_paths():
-    """软件安装 / 更新残留：安装包缓存、补丁回滚缓存与更新下载包。
+    """软件安装 / 更新残留：各类应用下载、装完就不再使用的安装包与更新缓存。
 
-    与「系统临时文件」「用户临时文件」「Windows 更新缓存」等类别互不重叠：
-    这里只针对安装程序自身遗留的包缓存与下载目录，不含通用临时目录。
+    扫描范围参考 DiskMate「更新器残留安装包」(key=updaters) 的设置：
+      * 扫描根是当前用户的 %LOCALAPPDATA%（不是 C:\\Windows 或 ProgramData）；
+      * 枚举其一级子目录，目录名包含 update / updater 即收录；
+      * 追加 Ollama\\updates、electron\\Cache 两个应用更新缓存目录。
+    在此基础上补充几个同类的「应用更新器下载缓存」（Chrome / Edge 更新器、
+    SquirrelTemp），它们同样只是下载下来的安装包，装完即可删。
+
+    **不再扫描** Windows Installer 补丁缓存 ($PatchCache$)、ProgramData\\Package
+    Cache、Downloaded Program Files、ClickOnce、ClickToRun 等系统级安装缓存：
+    这些是修复 / 卸载 / 回退软件时可能要用到的原始安装包，删除有副作用，
+    不属于「装完就没用」的残留，故从本类别中移除。
     """
-    w, l, pd = _windir(), _local(), _programdata()
-    return [
-        # MSI 补丁的回滚 / 修复缓存（卸载或修复已装更新时会用到）
-        os.path.join(w, "Installer", "$PatchCache$"),
-        # VC++ / .NET / Office / SQL 等安装程序包缓存，常达数 GB
-        os.path.join(pd, "Package Cache"),
-        # 旧版 IE / ActiveX 下载的程序文件
-        os.path.join(w, "Downloaded Program Files"),
-        # ClickOnce 应用部署缓存
-        os.path.join(l, "Microsoft", "ClickOnce"),
-        # 常见软件更新器下载的升级包（只删下载缓存，不影响已安装程序）
-        os.path.join(l, "Google", "Update", "Download", "*"),
-        os.path.join(l, "Microsoft", "EdgeUpdate", "Download", "*"),
-        os.path.join(pd, "Microsoft", "ClickToRun", "Updates", "*"),
-        os.path.join(l, "SquirrelTemp", "*"),
-    ]
+    local = _local()
+    found: list[str] = []
+    # ① DiskMate 主干：LocalAppData 一级目录中名字含 update 的更新器目录
+    try:
+        for name in os.listdir(local):
+            if "update" not in name.lower():
+                continue
+            p = os.path.join(local, name)
+            if os.path.isdir(p) and not os.path.islink(p):
+                found.append(p)
+    except OSError:
+        pass
+    # ② DiskMate 固定的两个应用更新缓存
+    found.append(os.path.join(local, "Ollama", "updates"))
+    found.append(os.path.join(local, "electron", "Cache"))
+    # ③ 同类补充：常见更新器的下载缓存（同为「已下载的安装包」）
+    found.extend([
+        os.path.join(local, "Google", "Update", "Download"),
+        os.path.join(local, "Microsoft", "EdgeUpdate", "Download"),
+        os.path.join(local, "SquirrelTemp"),
+    ])
+    # 去重、只保留确实存在的目录
+    seen, out = set(), []
+    for p in found:
+        if not p or not os.path.isdir(p):
+            continue
+        key = os.path.normcase(os.path.abspath(p))
+        if key in seen:
+            continue
+        seen.add(key)
+        out.append(p)
+    return out
 
 
 # C 盘 12 类可清理项。paths 支持 * 通配（缩略图/图标缓存是 .db 文件，不是目录）；
@@ -97,16 +122,18 @@ JUNK_CATEGORIES = [
     dict(
         name="软件安装或更新残留文件",
         paths=_install_residue_paths,
-        risk="中风险", checked=False,
-        note="安装包与补丁缓存、软件更新下载包（C:\\Windows\\Installer\\$PatchCache$、"
-             "C:\\ProgramData\\Package Cache、各软件 Update\\Download 目录等）",
-        consequence="只清理安装程序遗留的包缓存与更新下载包，已安装的软件与系统补丁仍可正常使用；"
-                    "但日后『修复 / 卸载 / 回退』部分程序或更新时，系统可能要求重新提供原始安装包"
-                    "或联网重新下载。",
-        advice="中风险：不影响软件日常运行。若近期打算卸载或修复大型软件"
-               "（Office、VC++ 运行库、.NET）或回退系统更新，建议先保留。",
-        short="修复/卸载时可能需重装包",
+        risk="低风险", checked=True,
+        note="各类应用下载、装完就不再使用的安装包与更新缓存（%LOCALAPPDATA% 下名称含 "
+             "update / updater 的更新器目录，以及 Ollama\\updates、electron\\Cache、"
+             "Chrome / Edge / Squirrel 更新下载目录等）",
+        consequence="只清理应用下载完成的安装包与更新缓存，已安装的软件、系统补丁与个人文件"
+                    "均不受影响；日后应用需要更新时会自行重新下载。不触碰 Windows Installer "
+                    "补丁缓存与程序安装包缓存，因此不影响软件的修复 / 卸载 / 回退。",
+        advice="低风险，可放心清理，建议每次都勾上；若某个应用正在下载更新，"
+               "被占用文件会被跳过或安排重启后清理。",
+        short="删已下载安装包，可重新下载",
         content_only=True,
+        show_roots=True,
     ),
     dict(
         name="预读取文件(Prefetch)",
@@ -328,6 +355,9 @@ def scan_junk(drives, cancel, progress=None) -> list[ScanItem]:
             note=cat["note"], files=files, risk=cat["risk"], no_clean=no_clean,
             consequence=cat["consequence"], advice=cat["advice"],
             consequence_short=cat["short"],
+            # 动态发现型类别（软件安装 / 更新残留）把所有命中目录交给详情面板，
+            # 「位置」逐条列出可点击目录，而不是列一堆目录下的子文件。
+            roots=paths if cat.get("show_roots") else [],
         ))
     return items
 
