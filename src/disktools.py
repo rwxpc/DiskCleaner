@@ -1,9 +1,9 @@
 # -*- coding: utf-8 -*-
-"""「常规清理」与「扫描大文件」的扫描实现。
+"""「C盘清理」与「扫描大文件」的扫描实现。
 
-「常规清理」逐项列出 C 盘上 12 类可清理项（系统目录与当前用户目录），
+「C盘清理」逐项列出 C 盘上 12 类可清理项（系统目录与当前用户目录），
 每一项自带风险等级、删除后果、建议与表格短标注，界面可逐行标注展示。
-高风险且不宜由文件删除方式处理的项（驱动仓库）只统计占用、不参与清理。
+个别只统计项（no_clean）只统计占用、不参与清理；高风险项默认不勾选，由用户自行判断。
 """
 from __future__ import annotations
 import glob
@@ -50,9 +50,33 @@ def _browser_paths():
     return out
 
 
+def _install_residue_paths():
+    """软件安装 / 更新残留：安装包缓存、补丁回滚缓存与更新下载包。
+
+    与「系统临时文件」「用户临时文件」「Windows 更新缓存」等类别互不重叠：
+    这里只针对安装程序自身遗留的包缓存与下载目录，不含通用临时目录。
+    """
+    w, l, pd = _windir(), _local(), _programdata()
+    return [
+        # MSI 补丁的回滚 / 修复缓存（卸载或修复已装更新时会用到）
+        os.path.join(w, "Installer", "$PatchCache$"),
+        # VC++ / .NET / Office / SQL 等安装程序包缓存，常达数 GB
+        os.path.join(pd, "Package Cache"),
+        # 旧版 IE / ActiveX 下载的程序文件
+        os.path.join(w, "Downloaded Program Files"),
+        # ClickOnce 应用部署缓存
+        os.path.join(l, "Microsoft", "ClickOnce"),
+        # 常见软件更新器下载的升级包（只删下载缓存，不影响已安装程序）
+        os.path.join(l, "Google", "Update", "Download", "*"),
+        os.path.join(l, "Microsoft", "EdgeUpdate", "Download", "*"),
+        os.path.join(pd, "Microsoft", "ClickToRun", "Updates", "*"),
+        os.path.join(l, "SquirrelTemp", "*"),
+    ]
+
+
 # C 盘 12 类可清理项。paths 支持 * 通配（缩略图/图标缓存是 .db 文件，不是目录）；
 # content_only=True 表示只清目录内容、保留目录本身，避免破坏系统/程序依赖的关键目录；
-# no_clean=True 表示只统计占用、绝不参与清理（驱动仓库）。
+# no_clean=True 表示只统计占用、绝不参与清理。
 JUNK_CATEGORIES = [
     dict(
         name="临时文件和日志文件",
@@ -71,18 +95,17 @@ JUNK_CATEGORIES = [
         content_only=True,
     ),
     dict(
-        name="设备驱动程序文件",
-        paths=lambda: [
-            os.path.join(_system32(), "DriverStore", "FileRepository"),
-        ],
-        risk="高风险", checked=False, no_clean=True,
-        note="驱动仓库 C:\\Windows\\System32\\DriverStore\\FileRepository（含当前设备正在使用的驱动）",
-        consequence="该目录存放 Windows 已安装与备用的驱动包，可能包含当前设备正在使用的驱动；"
-                    "直接删除会导致键盘、网卡、显卡等设备失效甚至系统无法启动。"
-                    "本项只统计占用空间，不参与清理、不会被删除。",
-        advice="高风险：请勿手动删除。如需精简，请用系统自带『磁盘清理 → 清理系统文件 → "
-               "设备驱动程序包』，由 Windows 判断哪些是过期驱动。",
-        short="含在用驱动，只统计不清理",
+        name="软件安装或更新残留文件",
+        paths=_install_residue_paths,
+        risk="中风险", checked=False,
+        note="安装包与补丁缓存、软件更新下载包（C:\\Windows\\Installer\\$PatchCache$、"
+             "C:\\ProgramData\\Package Cache、各软件 Update\\Download 目录等）",
+        consequence="只清理安装程序遗留的包缓存与更新下载包，已安装的软件与系统补丁仍可正常使用；"
+                    "但日后『修复 / 卸载 / 回退』部分程序或更新时，系统可能要求重新提供原始安装包"
+                    "或联网重新下载。",
+        advice="中风险：不影响软件日常运行。若近期打算卸载或修复大型软件"
+               "（Office、VC++ 运行库、.NET）或回退系统更新，建议先保留。",
+        short="修复/卸载时可能需重装包",
         content_only=True,
     ),
     dict(
@@ -254,7 +277,7 @@ def _expand(patterns) -> list[str]:
 def scan_junk(drives, cancel, progress=None) -> list[ScanItem]:
     """按固定 12 类逐项统计 C 盘可清理项，每项自带风险等级与删除后果。
 
-    drives 参数保留以兼容调用方（常规清理入口与 /scan 报告）；这些类别路径
+    drives 参数保留以兼容调用方（C盘清理入口与 /scan 报告）；这些类别路径
     固定位于 C 盘系统目录与当前用户目录，与所选磁盘无关。
     """
     items: list[ScanItem] = []

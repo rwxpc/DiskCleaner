@@ -25,6 +25,7 @@ src/DiskCleaner_扫描报告_*.txt
 # ---- 本地副本与第三方原程序（不纳入版本库）----
 DiskCleaner - 副本.exe
 磁盘清理小助手*.exe
+磁盘清理助手*.exe
 电脑C盘清理工具DiskMate.exe
 
 # ---- WorkBuddy 本地工作区数据（含会话记忆，不公开）----
@@ -37,3 +38,4 @@ src/v160_*.png
 src/v170_*.png
 src/v171_*.png
 src/v172_*.png
+src/v180_*.png

@@ -46,7 +46,7 @@ class ScanItem:
     risk: str = ""
     no_clean: bool = False
     no_recycle: bool = False
-    # v1.5.0：常规清理逐项标注。risk 为风险等级；consequence / advice 用于
+    # v1.5.0：C盘清理逐项标注。risk 为风险等级；consequence / advice 用于
     # 详情面板的完整「删除后果 / 建议」，consequence_short 用于表格列短标注。
     consequence: str = ""
     advice: str = ""

@@ -34,7 +34,7 @@ WPS_TRANSFER_DIR = r"D:\wps转存"  # WPS 文档默认转存位置
 
 # 导航项：key, 标签, 图标
 NAV = [
-    ("checkup", "常规清理", NAV_ICONS["checkup"]),
+    ("checkup", "C盘清理", NAV_ICONS["checkup"]),
     ("wechat", "微信专清", NAV_ICONS["wechat"]),
     ("wxwork", "企业微信专清", NAV_ICONS["wxwork"]),
     ("wps", "WPS缓存专清", NAV_ICONS["wps"]),
@@ -43,10 +43,10 @@ NAV = [
 ]
 
 PAGE_META = {
-    "checkup": ("常规清理", "逐项列出 C 盘 12 类可清理项：临时文件和日志文件、设备驱动程序文件、"
+    "checkup": ("C盘清理", "逐项列出 C 盘 12 类可清理项：临时文件和日志文件、软件安装或更新残留文件、"
                 "预读取文件(Prefetch)、缩略图缓存、图标缓存、系统临时文件、Windows 更新缓存、"
                 "Windows.old 残留目录、DirectX 着色器缓存、用户临时文件、浏览器缓存、系统错误报告。",
-                "仅列出扫描到内容的类别；每项标注风险等级与删除后果。驱动仓库等高风险项只统计不清理。"),
+                "仅列出扫描到内容的类别；每项标注风险等级与删除后果。Windows.old 等高风险项默认不勾选。"),
     "wechat": ("微信专清", "扫描所有本地磁盘中的 WeChat Files 数据目录，按 7 类汇总（含新增「文档」）；文档与文件互不重复，聊天记录只统计不清理。", ""),
     "wxwork": ("企业微信专清", "扫描所有本地磁盘中的 WXWork 数据目录，按 7 类汇总（含新增「文档」）；文档与文件互不重复，聊天记录只统计不清理。", ""),
     "wps": ("WPS缓存专清", "枚举 Kingsoft 缓存目录，重点标注本地备份与云同步缓存；清理前可转存文档。", ""),
@@ -478,9 +478,9 @@ class App:
         for key, *_ in NAV:
             frame = tk.Frame(self.content, bg=C["page_bg"])
             self.pages[key] = dict(frame=frame, built=False)
-        # 常规清理页
+        # C盘清理页
         self._build_checkup()
-        # 功能页（全盘扫描已整合进常规清理，不再单独建页）
+        # 功能页（全盘扫描已整合进C盘清理，不再单独建页）
         for key in ("wechat", "wxwork", "wps", "large"):
             self._build_scan_page(key)
         self._build_log_page()
@@ -504,7 +504,7 @@ class App:
         return page
 
     def _header_actions(self, key, scan_command):
-        """统一页面头部右侧工具栏（与「常规清理」完全一致）。
+        """统一页面头部右侧工具栏（与「C盘清理」完全一致）。
 
         从左到右：取消全选 / 全选 / 清理选中项(红) / 一键扫描(蓝)。
         使用相同字体、配色、内边距与 pack 间距，保证各页布局层级一致。
@@ -663,7 +663,7 @@ class App:
             card = StatCard(stats, label, "0 B", "0 项", dot, width=158)
             card.pack(side="left", padx=(0, 7))
             self.stat_cards[key] = card
-        # 常规清理表格区 + 项目详情面板（与其他功能页完全一致）
+        # C盘清理表格区 + 项目详情面板（与其他功能页完全一致）
         work = tk.Frame(page, bg=C["page_bg"])
         work.pack(fill="both", expand=True, padx=16, pady=(0, 12))
         d = self._make_detail_panel(work, "checkup")  # 详情先占位，避免被表格挤掉
@@ -941,7 +941,7 @@ class App:
         threading.Thread(target=self._worker, args=(key,), daemon=True).start()
 
     def start_checkup(self):
-        """一键全盘扫描 12 类垃圾，汇总到常规清理表格（不含其他专清模块）。"""
+        """一键全盘扫描 12 类垃圾，汇总到C盘清理表格（不含其他专清模块）。"""
         pg = self.pages["checkup"]
         pg["cancel"].clear()
         pg["scanning"] = True
@@ -960,7 +960,7 @@ class App:
             self.root, self._scan_title("checkup"), self.SCAN_TOTAL["checkup"],
             cancel_callback=lambda: pg["cancel"].set())
         pg["scan_dialog"] = dlg
-        self.log("常规清理：开始全盘扫描（12 类垃圾）")
+        self.log("C盘清理：开始全盘扫描（12 类垃圾）")
         threading.Thread(target=self._checkup_worker, daemon=True).start()
 
     def _checkup_worker(self):
@@ -1065,7 +1065,7 @@ class App:
                 text=f"✓ 扫描完成：发现 {len(payload)} 类可清理垃圾，合计 {human_size(total)}",
                 fg=C["success"])
             self._update_stats(payload)
-            self.log(f"常规清理：扫描完成，{len(payload)} 类，合计 {human_size(total)}")
+            self.log(f"C盘清理：扫描完成，{len(payload)} 类，合计 {human_size(total)}")
         elif kind == "error":
             self._close_scan_dialog("checkup")
             self.checkup_tip.configure(text=f"扫描出错：{payload}", fg=C["danger"])
@@ -1132,7 +1132,7 @@ class App:
             pg["checked"][iid] = it.default_checked
         # 风险等级 tag：保留作数据标注（其他页面沿用）。
         # 注意：Tk 8.6.9 的 ttk.Treeview 不渲染 tag 的 foreground/background，
-        # 常规清理页的彩色文字由 _redraw_risk_overlay 的 Canvas 覆盖层绘制。
+        # C盘清理页的彩色文字由 _redraw_risk_overlay 的 Canvas 覆盖层绘制。
         for level, fg, bg in (("低风险", C["success"], C["low_bg"]),
                               ("中风险", C["warning"], C["mid_bg"]),
                               ("高风险", C["danger"], C["high_bg"])):
@@ -1653,7 +1653,7 @@ class App:
         self.log(f"{PAGE_META[key][0]}：开始清理 {len(chosen)} 项")
 
         # 大文件页可能是用户重要数据，不启用「重启后删除」；
-        # 临时/缓存类（常规清理、微信、企业微信、WPS）才对被占用项登记重启清理。
+        # 临时/缓存类（C盘清理、微信、企业微信、WPS）才对被占用项登记重启清理。
         reboot_ok = key != "large"
 
         def on_finish(ok_count, failed, reboot_count=0):
