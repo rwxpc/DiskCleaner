@@ -1,7 +1,7 @@
 # -*- coding: utf-8 -*-
 """「C盘清理」与「扫描大文件」的扫描实现。
 
-「C盘清理」逐项列出 C 盘上 12 类可清理项（系统目录与当前用户目录），
+「C盘清理」逐项列出 C 盘上 14 类可清理项（系统目录与当前用户目录），
 每一项自带风险等级、删除后果、建议与表格短标注，界面可逐行标注展示。
 个别只统计项（no_clean）只统计占用、不参与清理；高风险项默认不勾选，由用户自行判断。
 """
@@ -99,7 +99,33 @@ def _install_residue_paths():
     return out
 
 
-# C 盘 12 类可清理项。paths 支持 * 通配（缩略图/图标缓存是 .db 文件，不是目录）；
+def _roaming() -> str:
+    return os.environ.get("APPDATA", os.path.join(_home(), "AppData", "Roaming"))
+
+
+def _dev_cache_paths():
+    """开发语言 / 包管理器下载的依赖包缓存。
+
+    扫描范围参考 DiskMate「清理体检」的 step.pkg 与「Python / .NET / Java 缓存」
+    两个步骤（key = npm / yarn / pnpm / pip / nuget / gradle / npminstall）：
+    这些只是包管理器下载下来的依赖包与压缩包缓存，删除后下次安装依赖会重新
+    下载，不影响已经装好的项目、程序与任何个人数据。
+    """
+    local, roaming, home = _local(), _roaming(), _home()
+    return [
+        os.path.join(roaming, "npm-cache"),
+        os.path.join(local, "npm-cache"),
+        os.path.join(local, "Yarn", "Cache"),
+        os.path.join(local, "pnpm-store"),
+        os.path.join(local, "pnpm", "store"),
+        os.path.join(local, "pip", "Cache"),
+        os.path.join(home, ".nuget", "packages"),
+        os.path.join(home, ".gradle", "caches"),
+        os.path.join(home, ".npminstall_tarball"),
+    ]
+
+
+# C 盘 14 类可清理项。paths 支持 * 通配（缩略图/图标缓存是 .db 文件，不是目录）；
 # content_only=True 表示只清目录内容、保留目录本身，避免破坏系统/程序依赖的关键目录；
 # no_clean=True 表示只统计占用、绝不参与清理。
 JUNK_CATEGORIES = [
@@ -134,6 +160,36 @@ JUNK_CATEGORIES = [
         short="删已下载安装包，可重新下载",
         content_only=True,
         show_roots=True,
+    ),
+    dict(
+        name="开发语言包缓存",
+        paths=_dev_cache_paths,
+        risk="低风险", checked=True,
+        note="npm / Yarn / pnpm / pip / NuGet / Gradle 等包管理器下载的依赖包缓存"
+             "（npm-cache、Yarn\\Cache、pnpm-store、pip\\Cache、.nuget\\packages、"
+             ".gradle\\caches、.npminstall_tarball 等）",
+        consequence="只删除包管理器下载缓存，已安装好的项目、依赖与程序功能均不受影响；"
+                    "下次安装依赖时会重新下载，耗时变长，网络不好时尤其明显。",
+        advice="低风险，可放心删，建议每次都勾上；若网络较慢或正在离线开发，可先保留。",
+        short="删包缓存，依赖会重新下载",
+        content_only=True,
+        show_roots=True,
+    ),
+    dict(
+        name="字体缓存",
+        paths=lambda: [
+            os.path.join(_local(), "FontCache"),
+            os.path.join(_windir(), "ServiceProfiles", "LocalService",
+                         "AppData", "Local", "FontCache"),
+        ],
+        risk="低风险", checked=True,
+        note="系统与应用的字体渲染缓存（FontCache 目录）",
+        consequence="只删除字体缓存数据，系统会按需重新生成，个别软件首次显示字体"
+                    "可能稍慢；不会删除任何已安装的字体文件。",
+        advice="可放心清理；空间收益通常不大。被系统占用的缓存文件会被跳过"
+               "或安排重启后清理。",
+        short="字体缓存按需重建",
+        content_only=True,
     ),
     dict(
         name="预读取文件(Prefetch)",
@@ -262,15 +318,22 @@ JUNK_CATEGORIES = [
     dict(
         name="系统错误报告",
         paths=lambda: [
-            os.path.join(_programdata(), "Microsoft", "Windows", "WER"),
-            os.path.join(_local(), "Microsoft", "Windows", "WER"),
+            # DiskMate「崩溃转储」(step.crash)：WER 下的报告队列与存档，以及
+            # 用户级 CrashDumps。用 * 展开 WER 一级子目录，避免与 WER 根目录
+            # 递归统计重复计数。
+            os.path.join(_programdata(), "Microsoft", "Windows", "WER", "ReportQueue"),
+            os.path.join(_programdata(), "Microsoft", "Windows", "WER", "ReportArchive"),
+            os.path.join(_local(), "Microsoft", "Windows", "WER", "ReportQueue"),
+            os.path.join(_local(), "Microsoft", "Windows", "WER", "ReportArchive"),
+            os.path.join(_local(), "CrashDumps"),
         ],
         risk="低风险", checked=True,
-        note="Windows 错误报告 WER 归档（C:\\ProgramData\\Microsoft\\Windows\\WER 等）",
-        consequence="只删除历史崩溃与错误报告归档，不影响系统运行；"
-                    "排查程序崩溃原因时会缺少诊断记录。",
-        advice="可放心清理；正在排查蓝屏或软件崩溃时建议先保留。",
-        short="只删报告归档，无系统影响",
+        note="Windows 错误报告与程序崩溃转储（WER\\ReportQueue、WER\\ReportArchive、"
+             "%LOCALAPPDATA%\\CrashDumps 等）",
+        consequence="只删除历史崩溃转储与错误报告归档，不影响系统运行、已装软件与"
+                    "任何个人数据；日后排查蓝屏或软件崩溃原因时会缺少这些诊断记录。",
+        advice="低风险，可放心清理；若正在排查某个软件的崩溃，建议先保留。",
+        short="只删崩溃转储，无系统影响",
         content_only=True,
     ),
 ]
@@ -302,7 +365,7 @@ def _expand(patterns) -> list[str]:
 
 
 def scan_junk(drives, cancel, progress=None) -> list[ScanItem]:
-    """按固定 12 类逐项统计 C 盘可清理项，每项自带风险等级与删除后果。
+    """按固定 14 类逐项统计 C 盘可清理项，每项自带风险等级与删除后果。
 
     drives 参数保留以兼容调用方（C盘清理入口与 /scan 报告）；这些类别路径
     固定位于 C 盘系统目录与当前用户目录，与所选磁盘无关。

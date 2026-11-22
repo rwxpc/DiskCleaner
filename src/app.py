@@ -43,9 +43,10 @@ NAV = [
 ]
 
 PAGE_META = {
-    "checkup": ("C盘清理", "逐项列出 C 盘 12 类可清理项：临时文件和日志文件、软件安装或更新残留文件、"
-                "预读取文件(Prefetch)、缩略图缓存、图标缓存、系统临时文件、Windows 更新缓存、"
-                "Windows.old 残留目录、DirectX 着色器缓存、用户临时文件、浏览器缓存、系统错误报告。",
+    "checkup": ("C盘清理", "逐项列出 C 盘 14 类可清理项：临时文件和日志文件、软件安装或更新残留文件、"
+                "开发语言包缓存、字体缓存、预读取文件(Prefetch)、缩略图缓存、图标缓存、系统临时文件、"
+                "Windows 更新缓存、Windows.old 残留目录、DirectX 着色器缓存、用户临时文件、"
+                "浏览器缓存、系统错误报告。",
                 "仅列出扫描到内容的类别；每项标注风险等级与删除后果。Windows.old 等高风险项默认不勾选。"),
     "wechat": ("微信专清", "扫描所有本地磁盘中的 WeChat Files 数据目录，按 7 类汇总（含新增「文档」）；文档与文件互不重复，聊天记录只统计不清理。", ""),
     "wxwork": ("企业微信专清", "扫描所有本地磁盘中的 WXWork 数据目录，按 7 类汇总（含新增「文档」）；文档与文件互不重复，聊天记录只统计不清理。", ""),
@@ -648,7 +649,7 @@ class App:
                                     bg=C["success_bg"], fg=C["success"],
                                     font=F["body"], anchor="w", padx=10, pady=5)
         self.checkup_tip.pack(fill="x")
-        # v1.5.1：12 类均为 C 盘固定路径，原「扫描磁盘」勾选栏已移除。
+        # v1.5.1：14 类均为 C 盘固定路径，原「扫描磁盘」勾选栏已移除。
         # _selected_drives("checkup") 固定返回 ["C:"]，供扫描弹窗标题与进度文案使用。
         # 统计卡片
         stats = tk.Frame(page, bg=C["page_bg"])
@@ -906,7 +907,7 @@ class App:
 
     # 各扫描入口的预计阶段数（用于弹窗 i/total；仅影响展示，不影响扫描范围）
     SCAN_TOTAL = {
-        "checkup": 12, "wechat": 8, "wxwork": 8, "wps": 8, "large": 4,
+        "checkup": 14, "wechat": 8, "wxwork": 8, "wps": 8, "large": 4,
     }
 
     def _scan_title(self, key):
@@ -941,7 +942,7 @@ class App:
         threading.Thread(target=self._worker, args=(key,), daemon=True).start()
 
     def start_checkup(self):
-        """一键全盘扫描 12 类垃圾，汇总到C盘清理表格（不含其他专清模块）。"""
+        """一键全盘扫描 14 类垃圾，汇总到C盘清理表格（不含其他专清模块）。"""
         pg = self.pages["checkup"]
         pg["cancel"].clear()
         pg["scanning"] = True
@@ -953,18 +954,18 @@ class App:
         if ov:
             ov.delete("all")
             ov.place_forget()
-        self.checkup_tip.configure(text="正在全盘扫描 12 类垃圾，请稍候…", fg=C["warning"])
+        self.checkup_tip.configure(text="正在全盘扫描 14 类垃圾，请稍候…", fg=C["warning"])
         # 主线程先读取 Tk 变量
         pg["selected_drives"] = self._selected_drives("checkup")
         dlg = ScanProgressDialog(
             self.root, self._scan_title("checkup"), self.SCAN_TOTAL["checkup"],
             cancel_callback=lambda: pg["cancel"].set())
         pg["scan_dialog"] = dlg
-        self.log("C盘清理：开始全盘扫描（12 类垃圾）")
+        self.log("C盘清理：开始全盘扫描（14 类垃圾）")
         threading.Thread(target=self._checkup_worker, daemon=True).start()
 
     def _checkup_worker(self):
-        """仅扫描图2列出的 12 类垃圾；不触碰微信/企业微信/WPS/扫描大文件等专清模块。"""
+        """仅扫描图2列出的 14 类垃圾；不触碰微信/企业微信/WPS/扫描大文件等专清模块。"""
         pg = self.pages["checkup"]
         cancel = lambda: pg["cancel"].is_set()
 
@@ -977,7 +978,7 @@ class App:
         all_items = []
         drives = pg.get("selected_drives") or get_fixed_drives()
         try:
-            report("正在扫描 C 盘 12 类可清理项…")
+            report("正在扫描 C 盘 14 类可清理项…")
             all_items = disktools.scan_junk(drives, cancel, report)
         except Exception as exc:
             pg["queue"].put(("error", f"全盘垃圾: {exc}"))
@@ -1493,7 +1494,7 @@ class App:
     def _selected_drives(self, key):
         pg = self.pages[key]
         if key == "checkup":
-            # v1.5.1：勾选栏已移除，12 类均为 C 盘固定路径，固定返回 C:。
+            # v1.5.1：勾选栏已移除，14 类均为 C 盘固定路径，固定返回 C:。
             return ["C:"]
         if key == "large" and "drive_labels" in pg:
             d = pg["drive_labels"].get(pg["drive_var"].get())
