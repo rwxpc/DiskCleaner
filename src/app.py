@@ -83,10 +83,11 @@ def build_report(sections) -> str:
         grand += total
         out.append(f"【{title}】 {len(items)} 项，合计 {human_size(total)}")
         # v1.6.0：微信 / 企业微信报告里逐条列出所有本地磁盘上找到的数据目录
-        roots = []
+        roots, seen_roots = [], set()
         for it in items:
             for r in (getattr(it, "roots", None) or []):
-                if r not in roots:
+                if r not in seen_roots:
+                    seen_roots.add(r)
                     roots.append(r)
         if roots:
             out.append(f"  数据目录（共 {len(roots)} 个）：")
@@ -428,12 +429,21 @@ def headless_scan():
         large = []
     sections.append(("扫描大文件(≥4GB)", large))
     report = build_report(sections)
-    path = os.path.join(os.getcwd(), f"DiskCleaner_扫描报告_{time.strftime('%Y%m%d_%H%M%S')}.txt")
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(report)
+    fname = f"DiskCleaner_扫描报告_{time.strftime('%Y%m%d_%H%M%S')}.txt"
+    path = ""
+    for folder in (os.getcwd(), os.path.expanduser("~")):
+        candidate = os.path.join(folder, fname)
+        try:
+            with open(candidate, "w", encoding="utf-8") as fh:
+                fh.write(report)
+            path = candidate
+            break
+        except OSError:
+            continue  # 当前目录只读 / 无权限时回退到用户目录
     try:
         print(report)
-        print(f"\n报告已保存: {path}")
+        print(f"\n报告已保存: {path}" if path
+              else "\n警告：报告写入失败，以上为完整内容。")
     except Exception:
         pass
     return path, report
@@ -442,7 +452,7 @@ def headless_scan():
 class App:
     def __init__(self, root):
         self.root = root
-        root.title(f"{APP_NAME} v{VERSION} — 磁盘清理助手  |  任我行电脑工作室")
+        root.title(f"{APP_NAME} v{VERSION} — 磁盘清理助手")
         root.geometry("1000x620")
         root.minsize(960, 540)
         ico = resource_path("app.ico")
@@ -456,6 +466,7 @@ class App:
         self.pages: dict[str, dict] = {}
         self.current = "checkup"
         self.log_lines: list[str] = []
+        self._cleaning = False  # 防止重复点击「清理选中项」开出多个删除任务
 
         shell = tk.Frame(root, bg=C["bg"])
         shell.pack(fill="both", expand=True)
@@ -923,6 +934,8 @@ class App:
 
     def start_scan(self, key):
         pg = self.pages[key]
+        if pg.get("scanning"):
+            return  # 已有扫描线程在跑，避免重复启动线程与多个进度弹窗
         pg["cancel"].clear()
         pg["scanning"] = True
         for iid in pg["tree"].get_children():
@@ -944,6 +957,8 @@ class App:
     def start_checkup(self):
         """一键全盘扫描 14 类垃圾，汇总到C盘清理表格（不含其他专清模块）。"""
         pg = self.pages["checkup"]
+        if pg.get("scanning"):
+            return  # 已有扫描线程在跑，避免重复启动线程与多个进度弹窗
         pg["cancel"].clear()
         pg["scanning"] = True
         for iid in pg["tree"].get_children():
@@ -1023,11 +1038,12 @@ class App:
                     self.log(f"{PAGE_META[key][0]}：扫描完成，{len(payload)} 项")
                     # v1.6.0：把跨磁盘找到的全部数据目录逐条写入日志与状态栏
                     if key in ("wechat", "wxwork"):
-                        roots, info = [], ""
+                        roots, info, seen_roots = [], "", set()
                         for it in payload:
                             info = info or getattr(it, "scan_info", "")
                             for r in (getattr(it, "roots", None) or []):
-                                if r not in roots:
+                                if r not in seen_roots:
+                                    seen_roots.add(r)
                                     roots.append(r)
                         if roots:
                             letters = " ".join(sorted({r[:2].upper() for r in roots}))
@@ -1059,6 +1075,7 @@ class App:
         if kind == "progress":
             self.checkup_tip.configure(text=payload)
         elif kind == "done":
+            pg["scanning"] = False
             self._close_scan_dialog("checkup")
             self._fill_tree("checkup", payload)
             total = sum(i.size for i in payload)
@@ -1068,6 +1085,7 @@ class App:
             self._update_stats(payload)
             self.log(f"C盘清理：扫描完成，{len(payload)} 类，合计 {human_size(total)}")
         elif kind == "error":
+            pg["scanning"] = False
             self._close_scan_dialog("checkup")
             self.checkup_tip.configure(text=f"扫描出错：{payload}", fg=C["danger"])
 
@@ -1462,12 +1480,14 @@ class App:
             note = "共找到 %d 个数据目录，点击可打开：" % len(roots)
             locs = list(roots)
         else:
-            locs = []
-            if it.path:
-                locs.append(it.path)
-            for p in paths:
-                if p != it.path and p not in locs:
-                    locs.append(p)
+            # 线性去重：旧实现用 `p not in locs` 逐条查找，目录内容成千上万时
+            # 是 O(n²) 卡顿；这里用 set 计数，只保留前 8 条用于展示。
+            seen, locs = set(), []
+            for p in ([it.path] if it.path else []) + list(paths):
+                if not p or p in seen:
+                    continue
+                seen.add(p)
+                locs.append(p)
             note = "点击路径可打开所在文件夹：" if locs else ""
             hidden = max(0, len(locs) - 8)
             locs = locs[:8]
@@ -1525,7 +1545,11 @@ class App:
 
     # ---------- 清理 ----------
     def _collect_files(self, item, days):
-        """展开为实际文件/目录路径列表；只统计项(no_clean)不产出任何目标。"""
+        """展开为实际文件/目录路径列表；只统计项(no_clean)不产出任何目标。
+
+        days > 0 时目录不再整目录删除，而是只取其中早于截止时间的旧文件，
+        使 WPS 页「清理范围」下拉真正生效（原先该下拉对目录项完全无效）。
+        """
         if getattr(item, "no_clean", False):
             return []
         cutoff = cutoff_timestamp(days)
@@ -1534,8 +1558,10 @@ class App:
             if not entry:
                 continue
             if os.path.isdir(entry):
-                # 目录：整体送入回收站（不设时间过滤，避免只删部分导致目录残留）
-                targets.append(entry)
+                if cutoff:
+                    targets.extend(files_older_than(entry, days))
+                else:
+                    targets.append(entry)
             elif os.path.isfile(entry):
                 try:
                     if not cutoff or os.path.getmtime(entry) < cutoff:
@@ -1597,6 +1623,9 @@ class App:
         return result["v"]
 
     def clean_selected(self, key):
+        if self._cleaning:
+            messagebox.showinfo(APP_NAME, "已有清理任务正在进行，请等待完成。")
+            return
         pg = self.pages[key]
         chosen = [it for iid, it in pg["items"].items()
                   if pg["checked"].get(iid) and not getattr(it, "no_clean", False)]
@@ -1617,8 +1646,7 @@ class App:
             return
 
         days = AGE_MAP.get(self.pages["wps"]["age_var"].get(), 0) if key == "wps" else 0
-        is_wps_flow = (key == "wps" or (key == "checkup" and any("WPS" in i.name for i in chosen)))
-        if is_wps_flow:
+        if key == "wps":  # C盘清理 14 类中无 WPS 项，原后半条件为死代码
             docs = []
             for it in chosen:
                 for fp in iter_files(it.path):
@@ -1658,6 +1686,7 @@ class App:
         reboot_ok = key != "large"
 
         def on_finish(ok_count, failed, reboot_count=0):
+            self._cleaning = False
             self.log(f"清理：已送入回收站 {ok_count} 项，" +
                      (f"已安排重启清理 {reboot_count} 项，" if reboot_count else "") +
                      (f"失败 {len(failed)} 项" if failed else "无失败"))
@@ -1677,7 +1706,12 @@ class App:
 
         dlg = DeleteProgressDialog(
             self.root, f"{PAGE_META[key][0]} — 实时清理进度", on_finish=on_finish)
-        dlg.start(chosen, days, self._collect_files, reboot_on_locked=reboot_ok)
+        self._cleaning = True
+        try:
+            dlg.start(chosen, days, self._collect_files, reboot_on_locked=reboot_ok)
+        except Exception:
+            self._cleaning = False
+            raise
 
 
 def main():

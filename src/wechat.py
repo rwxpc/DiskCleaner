@@ -182,11 +182,32 @@ def _classify_file(path: str):
 
 
 def _build_items(roots, app, cancel, progress, scan_info=""):
-    """按 7 类聚合「所有数据目录」下的文件；每类产出一条 ScanItem。"""
+    """按 7 类聚合「所有数据目录」下的文件；每类产出一条 ScanItem。
+
+    v1.9.1 安全加固：清理目标不再一律是「整个目录」。微信数据目录里同一
+    文件夹常混有多种文件（Cache 目录里同时有 .dat 缓存、.jpg 图片、
+    .docx 文档，甚至 db 聊天记录），若按整目录清理，只勾选「缓存」也会
+    连带删掉文档与聊天记录数据库。
+
+    现在为每个文件把类别登记到它所在的目录及全部祖先目录，只有「该目录
+    整个子树都只含本类别文件」时才整目录删除；混合目录一律改为本类别的
+    精确文件路径。纯目录仍可整删，保持清理速度，同时杜绝跨类别误删。
+    """
     buckets = {
         name: {"size": 0, "count": 0, "dirs": set(), "paths": []}
         for name, *_ in CATEGORIES
     }
+    dir_cats = {}  # 目录 -> 该目录及其所有子目录出现过的类别（None -> "_other_"）
+
+    def mark(dirpath, cat):
+        cur = dirpath
+        while cur:
+            dir_cats.setdefault(cur, set()).add(cat or "_other_")
+            parent = os.path.dirname(cur)
+            if not parent or parent == cur:
+                break
+            cur = parent
+
     for root in roots:
         if cancel():
             break
@@ -194,6 +215,8 @@ def _build_items(roots, app, cancel, progress, scan_info=""):
             if cancel():
                 break
             cat = _classify_file(fp)
+            d = os.path.dirname(fp)
+            mark(d, cat)
             if not cat:
                 continue
             try:
@@ -203,20 +226,30 @@ def _build_items(roots, app, cancel, progress, scan_info=""):
             b = buckets[cat]
             b["size"] += sz
             b["count"] += 1
-            b["dirs"].add(os.path.dirname(fp))
-            if cat in FILE_LEVEL_CATS:
-                b["paths"].append(fp)
+            b["dirs"].add(d)
+            b["paths"].append(fp)
 
     items = []
     for name, desc, risk, default_checked, no_clean in CATEGORIES:
         if progress:
             progress(f"正在统计：{app} · {name}")
         b = buckets[name]
-        # 「文件」「文档」用精确文件路径，二者互不干扰；其余类别沿用目录。
-        if name in FILE_LEVEL_CATS:
+        if no_clean:
+            # 只统计不清理：保留目录供详情展示，_collect_files 会直接返回空
+            files = sorted(b["dirs"])
+        elif name in FILE_LEVEL_CATS:
+            # 「文件」「文档」按精确文件路径清理，互不干扰（v1.7.0 既有规则）
             files = sorted(set(b["paths"]))
         else:
-            files = sorted(b["dirs"]) if b["dirs"] else []
+            # 图片 / 视频 / 音频 / 缓存：纯目录整删，混合目录只删本类文件
+            pure, mixed = [], set()
+            for d in b["dirs"]:
+                if dir_cats.get(d) == {name}:
+                    pure.append(d)
+                else:
+                    mixed.add(d)
+            exact = [p for p in b["paths"] if os.path.dirname(p) in mixed]
+            files = sorted(set(pure) | set(exact))
         items.append(ScanItem(
             path=files[0] if files else "",
             name=f"{app} · {name}",

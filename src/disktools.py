@@ -395,8 +395,12 @@ def scan_junk(drives, cancel, progress=None) -> list[ScanItem]:
                     try:
                         children = [os.path.join(p, e) for e in os.listdir(p)]
                     except OSError:
-                        children = []
-                    files.extend(children or [p])
+                        children = None  # 列举失败：退化为整目录清理
+                    if children:
+                        files.extend(children)
+                    elif children is None:
+                        files.append(p)
+                    # 空目录不产生清理目标，避免虚增成功计数
                 else:
                     files.append(p)
             elif os.path.isfile(p):
