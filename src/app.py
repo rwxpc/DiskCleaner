@@ -24,7 +24,9 @@ from ui import (
 )
 
 APP_NAME = "DiskCleaner"
-AGE_MAP = {"全部": 0, "30天前": 30, "90天前": 90, "180天前": 180}
+AGE_MAP = {"全部": 0, "30天前": 30, "90天前": 90, "180天前": 180, "360天前": 360}
+# 支持「清理范围」时间筛选的三个专清模块（共用同一套下拉、默认值与筛选逻辑）
+AGE_SCOPE_KEYS = ("wechat", "wxwork", "wps")
 # 「扫描大文件」下拉选项：显示文案 -> 阈值(MB)
 SIZE_CHOICES = ["100M以上", "200M以上", "500M以上", "1G以上", "2G以上", "4G以上"]
 SIZE_MB_MAP = {"100M以上": 100, "200M以上": 200, "500M以上": 500,
@@ -483,6 +485,17 @@ class App:
         self._build_log_data()
         self.navigate("checkup")
         self._refresh_disk_usage()
+        # v1.10.0：窗口重新获得焦点时同步磁盘状态（例如用户在资源管理器
+        # 清空回收站后切回程序），带 2 秒节流，避免频繁调用 Win32 API。
+        self._last_disk_refresh = time.time()
+
+        def _on_focus(_event):
+            now = time.time()
+            if now - self._last_disk_refresh < 2.0:
+                return
+            self._last_disk_refresh = now
+            self._refresh_disk_usage()
+        root.bind("<FocusIn>", _on_focus)
         self.root.after(120, self._poll)
 
     # ---------- 页面构建 ----------
@@ -757,15 +770,26 @@ class App:
             ttk.Combobox(bar, textvariable=sv, values=SIZE_CHOICES,
                          state="readonly", width=10, font=F["body"]).pack(side="left")
             self.pages[key]["size_var"] = sv
-        if key == "wps":
+        if key in AGE_SCOPE_KEYS:
+            # 微信 / 企业微信 / WPS 三个专清共用同一套「清理范围」下拉：
+            # 选项、默认值「全部」、只读样式与切换反馈完全一致。
             af = tk.Frame(bar, bg=C["page_bg"])
             af.pack(side="left")
             tk.Label(af, text="清理范围：", bg=C["page_bg"], fg=C["text_sub"],
                      font=F["body"]).pack(side="left")
             av = tk.StringVar(value="全部")
             ttk.Combobox(af, textvariable=av, values=list(AGE_MAP),
-                         state="readonly", width=8).pack(side="left")
+                         state="readonly", width=9).pack(side="left")
             self.pages[key]["age_var"] = av
+            # 切换行为：与 WPS 一致，切换后立即记录并在下一次清理生效；
+            # 不重扫、不改动表格（扫描结果始终展示全部命中项）。
+            def _on_age_change(*_args, k=key, var=av):
+                label = var.get() or "全部"
+                try:
+                    self.log(f"{PAGE_META[k][0]}：清理范围切换为「{label}」")
+                except Exception:
+                    pass
+            av.trace_add("write", _on_age_change)
 
         # 状态提示 + 已选（操作按钮已统一放到页面头部）
         statusbar = tk.Frame(page, bg=C["page_bg"])
@@ -877,22 +901,44 @@ class App:
             pass
 
     def _refresh_disk_usage(self):
+        """重新读取各固定磁盘可用空间并同步到侧栏「本机磁盘状态」。
+
+        v1.10.0：改为逐盘容错（单盘失败不影响其余盘）、异常不再静默吞掉；
+        清理完成、延后补偿刷新与窗口重新激活时都会调用，读数同时返回供校验。
+        """
+        import ctypes
+
+        def _warn(msg):
+            try:
+                self.log(msg)
+            except Exception:
+                pass
+
         info = {}
         try:
-            for d in get_fixed_drives():
-                import ctypes
+            drives = get_fixed_drives()
+        except Exception as exc:
+            _warn(f"本机磁盘状态：枚举磁盘失败 {exc}")
+            drives = []
+        for d in drives:
+            try:
                 free = ctypes.c_ulonglong(0)
                 total = ctypes.c_ulonglong(0)
-                ctypes.windll.kernel32.GetDiskFreeSpaceExW(
-                    ctypes.c_wchar_p(d), None, ctypes.byref(total), ctypes.byref(free))
-                if total.value:
-                    key = d[0] + ":"
-                    info[key] = (free.value / 1024**3,
-                                 (1 - free.value / total.value) * 100,
-                                 total.value / 1024**3)
-        except Exception:
-            pass
-        self.sidebar.update_disk_usage(info)
+                ok = ctypes.windll.kernel32.GetDiskFreeSpaceExW(
+                    ctypes.c_wchar_p(d), None,
+                    ctypes.byref(total), ctypes.byref(free))
+                if not ok or not total.value:
+                    continue
+                info[d[0] + ":"] = (free.value / 1024 ** 3,
+                                    (1 - free.value / total.value) * 100,
+                                    total.value / 1024 ** 3)
+            except Exception as exc:
+                _warn(f"本机磁盘状态：读取 {d} 失败 {exc}")
+        try:
+            self.sidebar.update_disk_usage(info)
+        except Exception as exc:
+            _warn(f"本机磁盘状态：刷新显示失败 {exc}")
+        return info
 
     # ---------- 扫描 ----------
     def _risk_of(self, item):
@@ -1548,7 +1594,8 @@ class App:
         """展开为实际文件/目录路径列表；只统计项(no_clean)不产出任何目标。
 
         days > 0 时目录不再整目录删除，而是只取其中早于截止时间的旧文件，
-        使 WPS 页「清理范围」下拉真正生效（原先该下拉对目录项完全无效）。
+        使三个专清页（微信 / 企业微信 / WPS）的「清理范围」下拉真正生效
+        （v1.9.1 已修复原先该下拉对目录项完全无效的问题）。
         """
         if getattr(item, "no_clean", False):
             return []
@@ -1636,16 +1683,26 @@ class App:
             return
         total = sum(i.size for i in chosen)
         perm = sum(1 for i in chosen if getattr(i, "no_recycle", False))
+        # v1.10.0：微信 / 企业微信 / WPS 三个专清共用「清理范围」下拉，
+        # 在弹确认框之前统一解析，确保提示、日志与实际筛选口径一致。
+        age_label = "全部"
+        days = 0
+        if key in AGE_SCOPE_KEYS:
+            age_label = pg["age_var"].get() or "全部"
+            days = AGE_MAP.get(age_label, 0)
+        scope_hint = (f"清理范围：{age_label}" +
+                      ("（只清理该时间之前的文件，较新文件保留）" if days else "（不限时间）"))
         note = ("\n其中部分项目将被永久删除、无法还原。" if perm else
                 "\n文件将送入系统回收站（可还原）。")
         if skipped:
             note += f"\n已跳过 {len(skipped)} 个「只统计不清理」项目。"
+        if key in AGE_SCOPE_KEYS:
+            note += f"\n{scope_hint}。"
         if not messagebox.askyesno(APP_NAME,
                                    f"已选择 {len(chosen)} 项，共 {human_size(total)}。{note}\n\n"
                                    "确定清理吗？"):
             return
 
-        days = AGE_MAP.get(self.pages["wps"]["age_var"].get(), 0) if key == "wps" else 0
         if key == "wps":  # C盘清理 14 类中无 WPS 项，原后半条件为死代码
             docs = []
             for it in chosen:
@@ -1679,7 +1736,8 @@ class App:
                              (f"，失败 {len(failed)} 个" if failed else ""))
 
         # 用实时进度小窗执行删除：显示正在删除的文件名与状态，完成后立即刷新列表
-        self.log(f"{PAGE_META[key][0]}：开始清理 {len(chosen)} 项")
+        self.log(f"{PAGE_META[key][0]}：开始清理 {len(chosen)} 项" +
+                 (f" · {scope_hint}" if key in AGE_SCOPE_KEYS else ""))
 
         # 大文件页可能是用户重要数据，不启用「重启后删除」；
         # 临时/缓存类（C盘清理、微信、企业微信、WPS）才对被占用项登记重启清理。
@@ -1689,14 +1747,23 @@ class App:
             self._cleaning = False
             self.log(f"清理：已送入回收站 {ok_count} 项，" +
                      (f"已安排重启清理 {reboot_count} 项，" if reboot_count else "") +
-                     (f"失败 {len(failed)} 项" if failed else "无失败"))
+                     (f"失败 {len(failed)} 项" if failed else "无失败") +
+                     (f" · {scope_hint}" if key in AGE_SCOPE_KEYS else ""))
             self._refresh_disk_usage()
+            # 文件系统 / 回收站元数据可能有落盘延迟，稍后再同步一次，
+            # 保证「本机磁盘状态」显示的是清理后的最新读数。
+            self.root.after(1200, self._refresh_disk_usage)
             # 删除完成后立即刷新当前列表
             if key == "checkup":
                 self.start_checkup()
             else:
                 self.start_scan(key)
             msg = f"清理完成：{ok_count} 项已送入回收站（可还原）。"
+            if key in AGE_SCOPE_KEYS:
+                msg += f"\n{scope_hint}。"
+            if ok_count and not perm:
+                msg += ("\n提示：清理项进入回收站后仍占用磁盘空间，"
+                        "清空回收站后「本机磁盘状态」的可用空间才会增加。")
             if reboot_count:
                 msg += (f"\n{reboot_count} 项被其他程序占用，已安排在下次重启时自动删除。"
                         "\n这些文件重启前仍在磁盘上，重启清理不可还原。")
