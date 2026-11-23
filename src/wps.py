@@ -4,7 +4,7 @@ from __future__ import annotations
 import os
 from core import (
     ScanItem, get_fixed_drives, path_stats, scan_directory_names,
-    is_reparse, should_skip,
+    is_reparse, should_skip, files_older_than,
 )
 
 KINGSOFT_NAMES = {"kingsoft", "wps office"}
@@ -45,7 +45,14 @@ def find_wps_roots(cancel) -> tuple[list[str], list[str]]:
     return _dedup(k_roots), _dedup(c_roots)
 
 
-def scan_wps(cancel, progress=None) -> list[ScanItem]:
+def scan_wps(cancel, progress=None, days=0) -> list[ScanItem]:
+    """枚举 WPS 缓存目录；v1.10.1 起 days>0 时只统计「清理范围」内的文件。
+
+    按时间筛选时每个目录的 size / file_count 只累加早于截止时间的旧文件，
+    并把这些文件的精确路径写入 ScanItem.files —— 表格显示多少、清理就删
+    多少，且不会因整目录删除而误删范围内较新的文件。days == 0 时保持
+    原来的整目录统计与清理方式不变。
+    """
     k_roots, c_roots = find_wps_roots(cancel)
     items: list[ScanItem] = []
     seen: set[str] = set()
@@ -54,7 +61,19 @@ def scan_wps(cancel, progress=None) -> list[ScanItem]:
         key = path.lower()
         if key in seen or not os.path.isdir(path) or cancel():
             return
-        size, count = path_stats(path, cancel)
+        if days:
+            matched = files_older_than(path, days, cancel)
+            size = 0
+            for fp in matched:
+                try:
+                    size += os.path.getsize(fp)
+                except OSError:
+                    pass
+            count = len(matched)
+            files = matched
+        else:
+            size, count = path_stats(path, cancel)
+            files = []
         if size <= 0 and count == 0:
             return
         seen.add(key)
@@ -68,6 +87,7 @@ def scan_wps(cancel, progress=None) -> list[ScanItem]:
             default_checked=True,
             note=path,
             rel_base=root or os.path.dirname(path),
+            files=files,
         ))
         if progress:
             progress(f"扫描 WPS: {rel}")

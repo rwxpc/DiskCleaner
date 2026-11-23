@@ -33,7 +33,7 @@ from __future__ import annotations
 import os
 from core import (
     ScanItem, DOC_EXTS, get_accessible_fixed_drives, scan_directory_names,
-    is_reparse, iter_files,
+    is_reparse, iter_files, cutoff_timestamp, file_within_age,
 )
 
 WECHAT_NAMES = {"wechat files", "wechat", "xwechat_files"}
@@ -181,7 +181,7 @@ def _classify_file(path: str):
     return None
 
 
-def _build_items(roots, app, cancel, progress, scan_info=""):
+def _build_items(roots, app, cancel, progress, scan_info="", days=0):
     """按 7 类聚合「所有数据目录」下的文件；每类产出一条 ScanItem。
 
     v1.9.1 安全加固：清理目标不再一律是「整个目录」。微信数据目录里同一
@@ -192,7 +192,14 @@ def _build_items(roots, app, cancel, progress, scan_info=""):
     现在为每个文件把类别登记到它所在的目录及全部祖先目录，只有「该目录
     整个子树都只含本类别文件」时才整目录删除；混合目录一律改为本类别的
     精确文件路径。纯目录仍可整删，保持清理速度，同时杜绝跨类别误删。
+
+    v1.10.1「扫描即筛选」：days > 0 时先按 cutoff 过滤文件，只把符合
+    「清理范围」的旧文件计入 size / file_count / 清理目标；并且此时
+    **一律输出精确文件路径**，不再整目录删除 —— 整目录删除无法保证只删
+    旧文件，也会让 _collect_files 对目录走 files_older_than 时跨类别误删。
+    days == 0（全部）时行为与旧版完全一致。
     """
+    cutoff = cutoff_timestamp(days)
     buckets = {
         name: {"size": 0, "count": 0, "dirs": set(), "paths": []}
         for name, *_ in CATEGORIES
@@ -214,6 +221,8 @@ def _build_items(roots, app, cancel, progress, scan_info=""):
         for fp in iter_files(root, cancel, max_depth=24):
             if cancel():
                 break
+            if not file_within_age(fp, cutoff):
+                continue  # 不在「清理范围」内的新文件，不统计也不清理
             cat = _classify_file(fp)
             d = os.path.dirname(fp)
             mark(d, cat)
@@ -237,6 +246,9 @@ def _build_items(roots, app, cancel, progress, scan_info=""):
         if no_clean:
             # 只统计不清理：保留目录供详情展示，_collect_files 会直接返回空
             files = sorted(b["dirs"])
+        elif cutoff:
+            # v1.10.1：按时间筛选时一律精确到文件，绝不能整目录删除
+            files = sorted(set(b["paths"]))
         elif name in FILE_LEVEL_CATS:
             # 「文件」「文档」按精确文件路径清理，互不干扰（v1.7.0 既有规则）
             files = sorted(set(b["paths"]))
@@ -267,21 +279,22 @@ def _build_items(roots, app, cancel, progress, scan_info=""):
     return items
 
 
-def _scan(names, app, label, cancel, progress):
+def _scan(names, app, label, cancel, progress, days=0):
     roots, skipped = find_app_roots(names, cancel, progress)
     info = ("已跳过不可访问的磁盘：" + "、".join(skipped)) if skipped else ""
     if progress:
-        progress(f"{label}：共找到 {len(roots)} 个数据目录（已扫描全部本地磁盘）")
+        scope = "" if not days else f"（清理范围：{days}天前）"
+        progress(f"{label}：共找到 {len(roots)} 个数据目录（已扫描全部本地磁盘）{scope}")
         for p in roots:
             progress("  · " + p)
         if info:
             progress(info)
-    return _build_items(roots, app, cancel, progress, scan_info=info)
+    return _build_items(roots, app, cancel, progress, scan_info=info, days=days)
 
 
-def scan_wechat(cancel, progress=None):
-    return _scan(WECHAT_NAMES, "微信", "微信数据目录", cancel, progress)
+def scan_wechat(cancel, progress=None, days=0):
+    return _scan(WECHAT_NAMES, "微信", "微信数据目录", cancel, progress, days)
 
 
-def scan_wxwork(cancel, progress=None):
-    return _scan(WXWORK_NAMES, "企业微信", "企业微信数据目录", cancel, progress)
+def scan_wxwork(cancel, progress=None, days=0):
+    return _scan(WXWORK_NAMES, "企业微信", "企业微信数据目录", cancel, progress, days)

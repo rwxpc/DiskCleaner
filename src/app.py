@@ -12,6 +12,7 @@ from tkinter import ttk, filedialog, messagebox
 
 from core import (
     human_size, get_fixed_drives, cutoff_timestamp, files_older_than,
+    file_within_age,
     send_to_recycle_bin, delete_permanent, move_preserving_tree,
     is_document, iter_files,
 )
@@ -59,9 +60,9 @@ PAGE_META = {
 
 # 各专清页对应的扫描函数
 SCAN_FN = {
-    "wechat": lambda cancel, progress: wechat.scan_wechat(cancel, progress),
-    "wxwork": lambda cancel, progress: wechat.scan_wxwork(cancel, progress),
-    "wps": lambda cancel, progress: wps.scan_wps(cancel, progress),
+    "wechat": lambda cancel, progress, days=0: wechat.scan_wechat(cancel, progress, days),
+    "wxwork": lambda cancel, progress, days=0: wechat.scan_wxwork(cancel, progress, days),
+    "wps": lambda cancel, progress, days=0: wps.scan_wps(cancel, progress, days),
     "large": None,  # 运行时按所选磁盘构造
 }
 
@@ -781,12 +782,19 @@ class App:
             ttk.Combobox(af, textvariable=av, values=list(AGE_MAP),
                          state="readonly", width=9).pack(side="left")
             self.pages[key]["age_var"] = av
-            # 切换行为：与 WPS 一致，切换后立即记录并在下一次清理生效；
-            # 不重扫、不改动表格（扫描结果始终展示全部命中项）。
+            # v1.10.1：切换范围后必须重扫 —— 扫描阶段就按天数过滤，
+            # 表格、大小、文件数、详情位置与清理目标都会随范围变化。
             def _on_age_change(*_args, k=key, var=av):
                 label = var.get() or "全部"
                 try:
-                    self.log(f"{PAGE_META[k][0]}：清理范围切换为「{label}」")
+                    self.log(f"{PAGE_META[k][0]}：清理范围切换为「{label}」，按该范围重新扫描")
+                    p = self.pages[k]
+                    if p.get("scanning"):
+                        # 扫描进行中：先取消，等本轮结束后由 _poll 自动补扫
+                        p["cancel"].set()
+                        p["pending_rescan"] = True
+                    else:
+                        self.start_scan(k)
                 except Exception:
                     pass
             av.trace_add("write", _on_age_change)
@@ -958,7 +966,7 @@ class App:
             drives = (pg.get("selected_drives") or pg.get("all_drives")
                       or [d for d, _ in pg.get("drive_vars", [])])
             size = pg.get("size_mb", 4096)
-            return lambda cancel, progress: disktools.scan_large_files(
+            return lambda cancel, progress, days=0: disktools.scan_large_files(
                 drives, size, cancel, progress)
         return SCAN_FN[key]
 
@@ -975,8 +983,12 @@ class App:
             drives = self._selected_drives("large")
             return f"正在扫描 {drives[0] if len(drives) == 1 else '所选磁盘'}"
         if key in ("wechat", "wxwork"):
-            return f"正在扫描所有本地磁盘 · {PAGE_META[key][0]}"
-        return f"正在扫描 {PAGE_META[key][0]}"
+            title = f"正在扫描所有本地磁盘 · {PAGE_META[key][0]}"
+        else:
+            title = f"正在扫描 {PAGE_META[key][0]}"
+        if key in AGE_SCOPE_KEYS:
+            title += f"（{self.pages[key].get('scan_label', '全部')}）"
+        return title
 
     def start_scan(self, key):
         pg = self.pages[key]
@@ -993,6 +1005,13 @@ class App:
         if key == "large":
             pg["selected_drives"] = self._selected_drives(key)
             pg["size_mb"] = SIZE_MB_MAP.get(self.pages[key]["size_var"].get(), 4096)
+        # v1.10.1：把「清理范围」固化到本次扫描，扫描与清理共用同一天数，
+        # 保证表格里显示的文件就是随后会被清理的文件（所见即所删）。
+        if key in AGE_SCOPE_KEYS:
+            pg["scan_label"] = pg["age_var"].get() or "全部"
+            pg["scan_days"] = AGE_MAP.get(pg["scan_label"], 0)
+        else:
+            pg["scan_label"], pg["scan_days"] = "全部", 0
         dlg = ScanProgressDialog(
             self.root, self._scan_title(key), self.SCAN_TOTAL.get(key, 7),
             cancel_callback=lambda: pg["cancel"].set())
@@ -1055,8 +1074,11 @@ class App:
                 dlg.report(msg, step=msg.startswith("正在统计："))
 
         try:
+            # v1.10.1：三个专清把固化后的 days 传进扫描层，扫描阶段即按
+            # 文件修改时间过滤；其余页面恒为 0（行为不变）。
             items = self._scan_fn_for(key)(
-                lambda: pg["cancel"].is_set(), report)
+                lambda: pg["cancel"].is_set(), report,
+                pg.get("scan_days", 0))
             pg["queue"].put(("done", items))
         except Exception as exc:
             pg["queue"].put(("error", str(exc)))
@@ -1080,8 +1102,10 @@ class App:
                     pg["scanning"] = False
                     self._close_scan_dialog(key)
                     self._fill_tree(key, payload)
-                    pg["status"].configure(text=f"扫描完成：{len(payload)} 项")
-                    self.log(f"{PAGE_META[key][0]}：扫描完成，{len(payload)} 项")
+                    scope = (f" · 清理范围：{pg.get('scan_label', '全部')}"
+                             if key in AGE_SCOPE_KEYS else "")
+                    pg["status"].configure(text=f"扫描完成：{len(payload)} 项{scope}")
+                    self.log(f"{PAGE_META[key][0]}：扫描完成，{len(payload)} 项{scope}")
                     # v1.6.0：把跨磁盘找到的全部数据目录逐条写入日志与状态栏
                     if key in ("wechat", "wxwork"):
                         roots, info, seen_roots = [], "", set()
@@ -1095,7 +1119,7 @@ class App:
                             letters = " ".join(sorted({r[:2].upper() for r in roots}))
                             pg["status"].configure(
                                 text=f"扫描完成：{len(payload)} 项 · "
-                                     f"找到 {len(roots)} 个数据目录（{letters}）")
+                                     f"找到 {len(roots)} 个数据目录（{letters}）{scope}")
                             self.log(f"{PAGE_META[key][0]}：共找到 {len(roots)} 个数据目录：")
                             for r in roots:
                                 self.log(f"    {r}")
@@ -1103,11 +1127,16 @@ class App:
                             self.log(f"{PAGE_META[key][0]}：未找到数据目录")
                         if info:
                             self.log(info)
+                    if pg.pop("pending_rescan", False):
+                        # 扫描途中切换了「清理范围」：按新范围补扫一次
+                        self.start_scan(key)
                 elif kind == "error":
                     pg["scanning"] = False
                     self._close_scan_dialog(key)
                     pg["status"].configure(text=f"扫描失败：{payload}")
                     self.log(f"{PAGE_META[key][0]}：扫描失败 {payload}")
+                    if pg.pop("pending_rescan", False):
+                        self.start_scan(key)
         self.root.after(120, self._poll)
 
     def _close_scan_dialog(self, key):
@@ -1593,9 +1622,10 @@ class App:
     def _collect_files(self, item, days):
         """展开为实际文件/目录路径列表；只统计项(no_clean)不产出任何目标。
 
-        days > 0 时目录不再整目录删除，而是只取其中早于截止时间的旧文件，
-        使三个专清页（微信 / 企业微信 / WPS）的「清理范围」下拉真正生效
-        （v1.9.1 已修复原先该下拉对目录项完全无效的问题）。
+        v1.10.1：三个专清已在扫描阶段按「清理范围」过滤，days>0 时传进来的
+        item.files 本身就是范围内的精确文件路径，这里再做同一口径的时间
+        复核（防止扫描后文件被改动）。days > 0 时目录项仍只取其中早于
+        截止时间的旧文件，不整目录删除（v1.9.1 既有保护）。
         """
         if getattr(item, "no_clean", False):
             return []
@@ -1610,11 +1640,9 @@ class App:
                 else:
                     targets.append(entry)
             elif os.path.isfile(entry):
-                try:
-                    if not cutoff or os.path.getmtime(entry) < cutoff:
-                        targets.append(entry)
-                except OSError:
-                    pass
+                # 与扫描层共用同一时间判定，保证「所见即所删」
+                if file_within_age(entry, cutoff):
+                    targets.append(entry)
         return targets
 
     def _ask_wps_choice(self, count, size_text):
@@ -1685,11 +1713,10 @@ class App:
         perm = sum(1 for i in chosen if getattr(i, "no_recycle", False))
         # v1.10.0：微信 / 企业微信 / WPS 三个专清共用「清理范围」下拉，
         # 在弹确认框之前统一解析，确保提示、日志与实际筛选口径一致。
-        age_label = "全部"
-        days = 0
-        if key in AGE_SCOPE_KEYS:
-            age_label = pg["age_var"].get() or "全部"
-            days = AGE_MAP.get(age_label, 0)
+        # v1.10.1：用「本次扫描」固化的范围，保证确认框、日志与实际删除
+        # 目标都对应表格里显示的那批文件（切换范围会自动重扫并更新它）。
+        age_label = pg.get("scan_label", "全部") if key in AGE_SCOPE_KEYS else "全部"
+        days = pg.get("scan_days", 0) if key in AGE_SCOPE_KEYS else 0
         scope_hint = (f"清理范围：{age_label}" +
                       ("（只清理该时间之前的文件，较新文件保留）" if days else "（不限时间）"))
         note = ("\n其中部分项目将被永久删除、无法还原。" if perm else
@@ -1706,7 +1733,10 @@ class App:
         if key == "wps":  # C盘清理 14 类中无 WPS 项，原后半条件为死代码
             docs = []
             for it in chosen:
-                for fp in iter_files(it.path):
+                # v1.10.1：按时间筛选时 it.files 已是范围内精确文件列表，
+                # 文档检测也只针对这批文件，不把范围外的文档一起转存。
+                cand = it.files or iter_files(it.path)
+                for fp in cand:
                     if is_document(fp):
                         docs.append(fp)
             if docs:

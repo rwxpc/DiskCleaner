@@ -170,17 +170,33 @@ def cutoff_timestamp(days: int | None) -> float:
     return time.time() - days * 86400
 
 
+def file_within_age(path: str, cutoff: float) -> bool:
+    """判断单个文件是否落在「清理范围」内（最后修改时间早于截止时间）。
+
+    v1.10.1：三个专清「扫描阶段即筛选」与清理层共用同一判定，保证表格里
+    显示的文件与实际送回收站的文件口径完全一致。时间基准统一取
+    os.path.getmtime —— 即资源管理器里的「修改日期」，对下载 / 接收 /
+    生成的缓存文件来说就是它的产生时间；不用 getctime 是因为文件被复制或
+    移动后创建时间会被重置，反而会把旧文件误判为新文件。
+    cutoff <= 0 表示不限时间；读取时间失败时保守判定为「不在范围内」，
+    避免误删无法确认年龄的文件。
+    """
+    if not cutoff:
+        return True
+    try:
+        return os.path.getmtime(path) < cutoff
+    except OSError:
+        return False
+
+
 def files_older_than(path: str, days: int | None,
                      cancel: Callable[[], bool] | None = None) -> list[str]:
     """返回早于指定天数的文件列表（days 为 None 或 0 时返回全部）。"""
     cutoff = cutoff_timestamp(days)
     result = []
     for fp in iter_files(path, cancel):
-        try:
-            if not cutoff or os.path.getmtime(fp) < cutoff:
-                result.append(fp)
-        except OSError:
-            pass
+        if file_within_age(fp, cutoff):
+            result.append(fp)
     return result
 
 
