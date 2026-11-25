@@ -429,8 +429,17 @@ def scan_junk(drives, cancel, progress=None) -> list[ScanItem]:
     return items
 
 
+# Windows 内核独占打开的系统文件：无法删除 / 移动 / 送入回收站，且体积通常
+# 达数 GB，列进「扫描大文件」结果只会误导用户（v1.10.2 起不再扫描、不列表）。
+# 按文件名（大小写不敏感）匹配，仅作用于本模块的大文件扫描；不修改
+# core.iter_files / should_skip 等通用遍历，其他专清模块行为完全不受影响。
+SKIP_LARGE_FILE_NAMES = {
+    "pagefile.sys",
+}
+
+
 def scan_large_files(drives, min_mb, cancel, progress=None) -> list[ScanItem]:
-    """查找不小于阈值的文件，按大小降序。"""
+    """查找不小于阈值的文件，按大小降序（自动排除系统独占文件）。"""
     min_bytes = int(min_mb * 1024 * 1024)
     items: list[ScanItem] = []
     for drive in drives:
@@ -439,6 +448,8 @@ def scan_large_files(drives, min_mb, cancel, progress=None) -> list[ScanItem]:
         for fp in iter_files(drive, cancel, max_depth=32):
             if cancel():
                 return items
+            if os.path.basename(fp).lower() in SKIP_LARGE_FILE_NAMES:
+                continue
             try:
                 sz = os.path.getsize(fp)
             except OSError:
