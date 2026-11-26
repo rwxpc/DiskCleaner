@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import ttk
 import math
 
-VERSION = "1.10.4"  # 版本号单一来源，app.py 与侧栏共用
+VERSION = "1.10.5"  # 版本号单一来源，app.py 与侧栏共用
 
 # ---------- 配色 ----------
 # 主题「精密仪器」：深墨蓝控制台侧栏 + 冷白数据区（自 v1.2.0 沿用至今）。
@@ -62,15 +62,53 @@ F = {
     "nav": ("Microsoft YaHei UI", 9),
     "nav_small": ("Microsoft YaHei UI", 8),
     "card_label": ("Microsoft YaHei UI", 9),
-    "card_value": ("Microsoft YaHei UI", 17, "bold"),
+    "card_value": ("Microsoft YaHei UI", 17, "bold"),   # 仅「项目详情」数值，保持不变
     "card_unit": ("Microsoft YaHei UI", 8),
     "body": ("Microsoft YaHei UI", 9),
     "body_bold": ("Microsoft YaHei UI", 9, "bold"),
     "small": ("Microsoft YaHei UI", 8),
     "btn": ("Microsoft YaHei UI", 9, "bold"),
+    # v1.10.5：头部工具栏专用像素字号（负 size），宽度不随系统 DPI 缩放放大。
+    "tool_btn": ("Microsoft YaHei UI", -12, "bold"),
+    # v1.10.5：统计卡片专用像素字号；_update_stats 再按真实文本统一降档。
+    "stat_value": ("Microsoft YaHei UI", -18, "bold"),
+    "stat_unit": ("Microsoft YaHei UI", -8),
     "pill": ("Microsoft YaHei UI", 8, "bold"),
     "admin": ("Microsoft YaHei UI", 8, "bold"),
 }
+
+# ---------- 统计卡片自适应字号（v1.10.5）----------
+# 卡片固定宽度 + point 字号会随系统 DPI 缩放放大，导致数值文本被左右裁切。
+# 改为像素字号（负 size）后，tkfont.Font.measure() 在 100% / 125% / 150% /
+# 200% 缩放下结果完全一致；再按本轮 4 张卡片的真实文本统一降到能完整显示的
+# 最大字号，做到「各种数值状态 + 各种分辨率」都不裁切、同页字号一致。
+STAT_CARD_W = 180
+STAT_PADX = 14
+STAT_RESERVE = 6
+STAT_FONT_FAMILY = "Microsoft YaHei UI"
+STAT_FONT_MIN_PX = 10
+
+
+def fit_stat_font(widget, pairs, card_w=STAT_CARD_W):
+    """返回 4 张统计卡片统一使用的像素字号 tuple。
+
+    pairs 为 [(数值文本, 单位文本), ...]；从 18px 粗体逐级降档，取第一个能让
+    「最长数值 + 最长单位 + 内边距 + 安全余量」放进 card_w 的字号。
+    负 size = 像素，不随系统 DPI 缩放变化，故结果在任意分辨率下都成立。
+    """
+    from tkinter import font as tkfont
+    # Python 3.8 的 tkfont.Font 无 destroy()，故只创建两个对象、用 configure
+    # 改 size 逐级降档；函数返回时由 __del__ 回收，兼容 3.8 ~ 3.13。
+    uf = tkfont.Font(widget, family=STAT_FONT_FAMILY, size=F["stat_unit"][1])
+    unit_w = max((uf.measure("  " + u) for _, u in pairs), default=0)
+    budget = card_w - 2 * STAT_PADX - STAT_RESERVE - unit_w
+    vf = tkfont.Font(widget, family=STAT_FONT_FAMILY, size=-18, weight="bold")
+    for px in range(18, STAT_FONT_MIN_PX - 1, -1):
+        vf.configure(size=-px)
+        worst = max((vf.measure(v) for v, _ in pairs), default=0)
+        if worst <= budget:
+            return (STAT_FONT_FAMILY, -px, "bold")
+    return (STAT_FONT_FAMILY, -STAT_FONT_MIN_PX, "bold")
 
 NAV_ICONS = {
     "checkup": "✓", "wechat": "✆", "wxwork": "▦", "wps": "▤",
@@ -398,23 +436,35 @@ class Sidebar(tk.Frame):
 
 
 class StatCard(tk.Frame):
-    """统计卡片：色点 + 大号数值 + 标签 + 子说明。"""
+    """统计卡片：色点 + 大号数值 + 标签 + 子说明。
 
-    def __init__(self, parent, label, value, sub, dot_color, width=158):
+    v1.10.5：数值与单位改用像素字号，并保留 Label 引用供 set_value() 复用以
+    更新文本；App._update_stats 会用 fit_stat_font() 按本轮 4 张卡片的真实
+    文本统一降档，保证固定宽度卡片在任何数值状态 / DPI 下都不裁切。
+    """
+
+    def __init__(self, parent, label, value, sub, dot_color, width=STAT_CARD_W):
         tk.Frame.__init__(self, parent, bg=C["card"], highlightbackground=C["border"],
                           highlightthickness=1, width=width, height=68)
         self.pack_propagate(False)
         dot = tk.Canvas(self, width=10, height=10, bg=C["card"], highlightthickness=0)
-        dot.pack(anchor="w", padx=(10, 0), pady=(7, 0))
+        dot.pack(anchor="w", padx=(STAT_PADX, 0), pady=(12, 0))
         dot.create_oval(1, 1, 9, 9, fill=dot_color)
         tk.Label(self, text=label, bg=C["card"], fg=C["text_sub"],
-                 font=F["card_label"]).pack(anchor="w", padx=10)
+                 font=F["card_label"]).pack(anchor="w", padx=STAT_PADX)
         row = tk.Frame(self, bg=C["card"])
-        row.pack(fill="x", padx=10)
-        tk.Label(row, text=value, bg=C["card"], fg=C["text"],
-                 font=F["card_value"]).pack(side="left")
-        tk.Label(row, text=f"  {sub}", bg=C["card"], fg=C["text_mute"],
-                 font=F["card_unit"]).pack(side="left")
+        row.pack(fill="x", padx=STAT_PADX)
+        self.value_lbl = tk.Label(row, text=value, bg=C["card"], fg=C["text"],
+                                  font=F["stat_value"])
+        self.value_lbl.pack(side="left")
+        self.unit_lbl = tk.Label(row, text="  " + sub, bg=C["card"],
+                                 fg=C["text_mute"], font=F["stat_unit"])
+        self.unit_lbl.pack(side="left")
+
+    def set_value(self, value, sub, font=None):
+        """更新数值 / 单位；font 为本轮 4 张卡片统一算出的自适应像素字号。"""
+        self.value_lbl.configure(text=value, font=font or F["stat_value"])
+        self.unit_lbl.configure(text="  " + sub)
 
 
 class SweepCanvas(tk.Canvas):

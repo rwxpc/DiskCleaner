@@ -22,6 +22,7 @@ import disktools
 from ui import (
     C, F, VERSION, NAV_ICONS, setup_styles, flat_btn, ghost_btn, card_frame,
     RoundButton, risk_pill, Sidebar, StatCard, SweepCanvas, MagnifierCanvas,
+    STAT_CARD_W, fit_stat_font,
 )
 
 APP_NAME = "DiskCleaner"
@@ -453,8 +454,8 @@ class App:
     def __init__(self, root):
         self.root = root
         root.title(f"{APP_NAME} v{VERSION} — 磁盘清理助手")
-        root.geometry("1000x580")
-        root.minsize(960, 520)
+        root.geometry("1040x580")
+        root.minsize(1000, 520)
         ico = resource_path("app.ico")
         if os.path.exists(ico):
             try:
@@ -515,14 +516,23 @@ class App:
         hdr = tk.Frame(page, bg=C["page_bg"])
         hdr.pack(fill="x", padx=16, pady=(10, 6))
         left = tk.Frame(hdr, bg=C["page_bg"])
-        left.pack(side="left", anchor="n")
-        tk.Label(left, text=title, bg=C["page_bg"], fg=C["text"],
-                 font=F["title"]).pack(anchor="w")
-        tk.Label(left, text=subtitle, bg=C["page_bg"], fg=C["text_sub"],
-                 font=F["subtitle"], wraplength=460, justify="left").pack(anchor="w", pady=(1, 0))
-        # 右侧工具区
+        # v1.10.5：工具区先 pack，优先拿到完整请求宽度；原先「说明 460 + gap 12
+        # + 工具 308 = 780」零余量，按钮字体稍放大就会挤掉最左的「取消全选」。
         right = tk.Frame(hdr, bg=C["page_bg"])
         right.pack(side="right", anchor="n")
+        left.pack(side="left", anchor="n", fill="x", expand=True)
+        tk.Label(left, text=title, bg=C["page_bg"], fg=C["text"],
+                 font=F["title"]).pack(anchor="w")
+        sub = tk.Label(left, text=subtitle, bg=C["page_bg"], fg=C["text_sub"],
+                       font=F["subtitle"], wraplength=460, justify="left")
+        sub.pack(anchor="w", pady=(1, 0))
+
+        # 窗口变窄 / 工具区变宽时，说明文本跟随实际可用宽度重排，不溢出、不重叠
+        def _fit_sub(e, lbl=sub):
+            w = max(240, e.width - 4)
+            if int(lbl.cget("wraplength") or 0) != w:
+                lbl.configure(wraplength=w)
+        left.bind("<Configure>", _fit_sub, add="+")
         self.pages[key]["header_right"] = right
         return page
 
@@ -531,17 +541,23 @@ class App:
 
         从左到右：取消全选 / 全选 / 清理选中项(红) / 一键扫描(蓝)。
         使用相同字体、配色、内边距与 pack 间距，保证各页布局层级一致。
+        v1.10.5：统一改用像素字号 F["tool_btn"]，按钮宽度不随系统 DPI 缩放放大，
+        配合 _page_header 的工具区优先 pack，杜绝「取消全选」被挤压裁切。
         """
         right = self.pages[key]["header_right"]
         if scan_command is not None:
             flat_btn(right, "一键扫描", scan_command,
-                     bg=C["primary"], fg=C["white"]).pack(side="right", padx=4)
+                     bg=C["primary"], fg=C["white"],
+                     font=F["tool_btn"]).pack(side="right", padx=4)
         flat_btn(right, "清理选中项", lambda: self.clean_selected(key),
-                 bg=C["danger"], fg=C["white"]).pack(side="right", padx=4)
+                 bg=C["danger"], fg=C["white"],
+                 font=F["tool_btn"]).pack(side="right", padx=4)
         flat_btn(right, "全选", lambda: self.select_all(key, True),
-                 bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"]).pack(side="right", padx=4)
+                 bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"],
+                 font=F["tool_btn"]).pack(side="right", padx=4)
         flat_btn(right, "取消全选", lambda: self.select_all(key, False),
-                 bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"]).pack(side="right", padx=4)
+                 bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"],
+                 font=F["tool_btn"]).pack(side="right", padx=4)
         return right
 
     def _make_detail_panel(self, work, key):
@@ -683,9 +699,14 @@ class App:
             ("mid", "中风险", C["warning"]),
             ("high", "高风险", C["danger"]),
         ):
-            card = StatCard(stats, label, "0 B", "0 项", dot, width=158)
+            card = StatCard(stats, label, "0 B", "0 项", dot, width=STAT_CARD_W)
             card.pack(side="left", padx=(0, 7))
             self.stat_cards[key] = card
+        # 初始「0 B / 0 项」也走同一套自适应字号，避免扫描前后字号跳变
+        init_font = fit_stat_font(self.stat_cards["total"],
+                                  [("0 B", "0 项")] * 4, card_w=STAT_CARD_W)
+        for card in self.stat_cards.values():
+            card.set_value("0 B", "0 项", init_font)
         # C盘清理表格区 + 项目详情面板（与其他功能页完全一致）
         work = tk.Frame(page, bg=C["page_bg"])
         work.pack(fill="both", expand=True, padx=16, pady=(0, 8))
@@ -1171,24 +1192,12 @@ class App:
             "mid": (human_size(sum(i.size for i in risk["中风险"])), f"{len(risk['中风险'])} 项"),
             "high": (human_size(sum(i.size for i in risk["高风险"])), f"{len(risk['高风险'])} 项"),
         }
+        # v1.10.5：按本轮 4 张卡片的真实文本统一计算自适应像素字号，保证
+        # 「0 B ~ 999.99 PB」各种数值状态与 100%~200% DPI 下都完整显示。
+        font = fit_stat_font(self.stat_cards["total"], list(vals.values()),
+                             card_w=STAT_CARD_W)
         for key, card in self.stat_cards.items():
-            # 重建数值显示
-            for w in list(card.winfo_children()):
-                w.destroy()
-            dot = tk.Canvas(card, width=10, height=10, bg=C["card"], highlightthickness=0)
-            dot.pack(anchor="w", padx=(14, 0), pady=(12, 0))
-            color = {"total": C["primary"], "low": C["success"],
-                     "mid": C["warning"], "high": C["danger"]}[key]
-            dot.create_oval(1, 1, 9, 9, fill=color)
-            label = {"total": "可清理总量", "low": "低风险", "mid": "中风险", "high": "高风险"}[key]
-            tk.Label(card, text=label, bg=C["card"], fg=C["text_sub"],
-                     font=F["card_label"]).pack(anchor="w", padx=14)
-            row = tk.Frame(card, bg=C["card"])
-            row.pack(fill="x", padx=14)
-            tk.Label(row, text=vals[key][0], bg=C["card"], fg=C["text"],
-                     font=F["card_value"]).pack(side="left")
-            tk.Label(row, text="  " + vals[key][1], bg=C["card"],
-                     fg=C["text_mute"], font=F["card_unit"]).pack(side="left")
+            card.set_value(vals[key][0], vals[key][1], font)
 
     def _fill_tree(self, key, items):
         pg = self.pages[key]
