@@ -46,13 +46,10 @@ NAV = [
 ]
 
 PAGE_META = {
-    "checkup": ("C盘清理", "逐项列出 C 盘 14 类可清理项：临时文件和日志文件、软件安装或更新残留文件、"
-                "开发语言包缓存、字体缓存、预读取文件(Prefetch)、缩略图缓存、图标缓存、系统临时文件、"
-                "Windows 更新缓存、Windows.old 残留目录、DirectX 着色器缓存、用户临时文件、"
-                "浏览器缓存、系统错误报告。",
+    "checkup": ("C盘清理", "扫描C盘中14类临时、缓存、残留等文件，清理后可在回收站中恢复，如文件无法放入回收站可直接删除。",
                 "仅列出扫描到内容的类别；每项标注风险等级与删除后果。Windows.old 等高风险项默认不勾选。"),
-    "wechat": ("微信专清", "扫描所有本地磁盘中的 WeChat Files 数据目录，按 7 类汇总（含新增「文档」）；文档与文件互不重复，聊天记录只统计不清理。", ""),
-    "wxwork": ("企业微信专清", "扫描所有本地磁盘中的 WXWork 数据目录，按 7 类汇总（含新增「文档」）；文档与文件互不重复，聊天记录只统计不清理。", ""),
+    "wechat": ("微信专清", "扫描磁盘中微信下载的7类临时、缓存等文件，可选择扫描的时间范围，清理后可在回收站中恢复，聊天记录只统计不清理。", ""),
+    "wxwork": ("企业微信专清", "扫描磁盘中企业微信下载的7类临时、缓存等文件，可选择扫描的时间范围，清理后可在回收站中恢复，聊天记录只统计不清理。", ""),
     "wps": ("WPS缓存专清", "枚举 Kingsoft 缓存目录，重点标注本地备份与云同步缓存；清理前可转存文档。", ""),
     "large": ("扫描大文件", "列出所选磁盘上的超大文件；双击可打开所在目录，勾选后可送入回收站。", ""),
     "log": ("日志", "所有扫描与清理动作的完整记录，同时写入本地日志文件。", ""),
@@ -456,8 +453,8 @@ class App:
     def __init__(self, root):
         self.root = root
         root.title(f"{APP_NAME} v{VERSION} — 磁盘清理助手")
-        root.geometry("1000x620")
-        root.minsize(960, 540)
+        root.geometry("1000x580")
+        root.minsize(960, 520)
         ico = resource_path("app.ico")
         if os.path.exists(ico):
             try:
@@ -516,13 +513,13 @@ class App:
         page = self.pages[key]["frame"]
         title, subtitle, _ = PAGE_META[key]
         hdr = tk.Frame(page, bg=C["page_bg"])
-        hdr.pack(fill="x", padx=16, pady=(14, 8))
+        hdr.pack(fill="x", padx=16, pady=(10, 6))
         left = tk.Frame(hdr, bg=C["page_bg"])
         left.pack(side="left", anchor="n")
         tk.Label(left, text=title, bg=C["page_bg"], fg=C["text"],
                  font=F["title"]).pack(anchor="w")
         tk.Label(left, text=subtitle, bg=C["page_bg"], fg=C["text_sub"],
-                 font=F["subtitle"], wraplength=460, justify="left").pack(anchor="w", pady=(2, 0))
+                 font=F["subtitle"], wraplength=460, justify="left").pack(anchor="w", pady=(1, 0))
         # 右侧工具区
         right = tk.Frame(hdr, bg=C["page_bg"])
         right.pack(side="right", anchor="n")
@@ -669,16 +666,16 @@ class App:
         # 提示条
         tip = tk.Frame(page, bg=C["success_bg"], highlightbackground=C["success_border"],
                        highlightthickness=1)
-        tip.pack(fill="x", padx=16, pady=(0, 8))
+        tip.pack(fill="x", padx=16, pady=(0, 6))
         self.checkup_tip = tk.Label(tip, text="点击右上角「一键扫描」开始全盘扫描…",
                                     bg=C["success_bg"], fg=C["success"],
-                                    font=F["body"], anchor="w", padx=10, pady=5)
+                                    font=F["body"], anchor="w", padx=10, pady=4)
         self.checkup_tip.pack(fill="x")
         # v1.5.1：14 类均为 C 盘固定路径，原「扫描磁盘」勾选栏已移除。
         # _selected_drives("checkup") 固定返回 ["C:"]，供扫描弹窗标题与进度文案使用。
         # 统计卡片
         stats = tk.Frame(page, bg=C["page_bg"])
-        stats.pack(fill="x", padx=16, pady=(0, 8))
+        stats.pack(fill="x", padx=16, pady=(0, 6))
         self.stat_cards = {}
         for key, label, dot in (
             ("total", "可清理总量", C["primary"]),
@@ -691,7 +688,7 @@ class App:
             self.stat_cards[key] = card
         # C盘清理表格区 + 项目详情面板（与其他功能页完全一致）
         work = tk.Frame(page, bg=C["page_bg"])
-        work.pack(fill="both", expand=True, padx=16, pady=(0, 12))
+        work.pack(fill="both", expand=True, padx=16, pady=(0, 8))
         d = self._make_detail_panel(work, "checkup")  # 详情先占位，避免被表格挤掉
         table_card = card_frame(work)
         table_card.pack(side="left", fill="both", expand=True)
@@ -738,7 +735,7 @@ class App:
 
         # 工具栏（磁盘/大小/时间范围等筛选项）
         bar = tk.Frame(page, bg=C["page_bg"])
-        bar.pack(fill="x", padx=16, pady=(0, 6))
+        bar.pack(fill="x", padx=16, pady=(0, 5))
         if key == "large":
             # 扫描范围：下拉菜单（盘符 + 可用空间），并保留「全部磁盘」
             drives = get_fixed_drives()
@@ -801,7 +798,7 @@ class App:
 
         # 状态提示 + 已选（操作按钮已统一放到页面头部）
         statusbar = tk.Frame(page, bg=C["page_bg"])
-        statusbar.pack(fill="x", padx=16, pady=(0, 4))
+        statusbar.pack(fill="x", padx=16, pady=(0, 3))
         status = tk.Label(statusbar, text="等待扫描…", bg=C["page_bg"],
                           fg=C["text_sub"], font=F["small"], anchor="w")
         status.pack(side="left")
@@ -811,7 +808,7 @@ class App:
 
         # 表格 + 详情面板
         work = tk.Frame(page, bg=C["page_bg"])
-        work.pack(fill="both", expand=True, padx=16, pady=(0, 12))
+        work.pack(fill="both", expand=True, padx=16, pady=(0, 8))
         table_card = card_frame(work)
         # pack 顺序关键：右侧详情面板必须先占位，否则 expand=True 的表格会
         # 先抢光横向空间，把详情面板挤成 1px 而完全不可见。
@@ -858,7 +855,7 @@ class App:
                  padx=8, pady=4).pack(side="right", padx=4)
 
         box = card_frame(page)
-        box.pack(fill="both", expand=True, padx=16, pady=(0, 12))
+        box.pack(fill="both", expand=True, padx=16, pady=(0, 8))
         self.log_text = tk.Text(box, bg=C["log_bg"], fg=C["log_fg"],
                                 font=("Consolas", 8), relief="flat",
                                 insertbackground=C["log_fg"], padx=9, pady=7)
