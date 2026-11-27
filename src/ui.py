@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import ttk
 import math
 
-VERSION = "1.10.6"  # 版本号单一来源，app.py 与侧栏共用
+VERSION = "1.10.7"  # 版本号单一来源，app.py 与侧栏共用
 
 # ---------- 配色 ----------
 # 主题「精密仪器」：深墨蓝控制台侧栏 + 冷白数据区（自 v1.2.0 沿用至今）。

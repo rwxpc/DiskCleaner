@@ -153,9 +153,9 @@ class ScanProgressDialog:
         tk.Label(box, textvariable=self.count_var, bg=C["card"], fg=C["text_mute"],
                  font=F["small"]).pack(anchor="e", padx=20, pady=(4, 12))
 
-        flat_btn(box, "取消扫描", self._on_cancel,
-                 bg=C["card"], fg=C["text"], active_bg=C["neutral_bg"],
-                 padx=12, pady=5).pack(pady=(0, 18))
+        # v1.10.7：弹窗按钮统一 unslop 标准——中断扫描属次要操作，改中性描边
+        outline_btn(box, "取消扫描", self._on_cancel,
+                    fg=C["text_sub"], padx=12, pady=5).pack(pady=(0, 18))
 
         # 居中
         self.top.update_idletasks()
@@ -263,9 +263,9 @@ class DeleteProgressDialog:
 
         bottom = tk.Frame(box, bg=C["card"])
         bottom.pack(fill="x", padx=18, pady=(6, 16))
-        flat_btn(bottom, "停止清理", self._on_close,
-                 bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"],
-                 padx=10, pady=4).pack(side="right")
+        # v1.10.7：中断清理属次要操作，改中性描边（不再有灰底实心按钮）
+        outline_btn(bottom, "停止清理", self._on_close,
+                    fg=C["text_sub"], padx=10, pady=4).pack(side="right")
 
         self.q = queue.Queue()
         # 居中显示
@@ -1680,14 +1680,16 @@ class App:
 
         box = tk.Frame(dlg, bg=C["card"], padx=18, pady=4)
         box.pack(fill="x")
+        # v1.10.7 unslop：本弹窗只保留「转存到默认位置（推荐）」一个实心主色按钮，
+        # 其余统一为白底 1px 描边；「直接清理」保留危险语义（红字 + 红边）但不抢眼。
         flat_btn(box, f"转存到 {WPS_TRANSFER_DIR}（推荐）", lambda: choose("transfer_default"),
                  bg=C["primary"], fg=C["white"]).pack(fill="x", pady=3)
-        flat_btn(box, "转存到其他位置…", lambda: choose("transfer_custom"),
-                 bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"]).pack(fill="x", pady=3)
-        flat_btn(box, "直接清理", lambda: choose("delete"),
-                 bg=C["danger"], fg=C["white"]).pack(fill="x", pady=3)
-        flat_btn(box, "取消", lambda: choose("cancel"),
-                 bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"]).pack(fill="x", pady=3)
+        outline_btn(box, "转存到其他位置…", lambda: choose("transfer_custom"),
+                    fg=C["text_sub"]).pack(fill="x", pady=3)
+        outline_btn(box, "直接清理", lambda: choose("delete"),
+                    fg=C["danger_hover"], border=C["danger"]).pack(fill="x", pady=3)
+        outline_btn(box, "取消", lambda: choose("cancel"),
+                    fg=C["text_sub"]).pack(fill="x", pady=3)
         tk.Label(dlg, text="取消后不会删除任何文件。", bg=C["card"], fg=C["text_mute"],
                  font=F["small"]).pack(anchor="w", padx=18, pady=(6, 14))
         dlg.update_idletasks()
