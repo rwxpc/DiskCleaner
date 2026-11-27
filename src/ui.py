@@ -5,7 +5,7 @@ import tkinter as tk
 from tkinter import ttk
 import math
 
-VERSION = "1.10.5"  # 版本号单一来源，app.py 与侧栏共用
+VERSION = "1.10.6"  # 版本号单一来源，app.py 与侧栏共用
 
 # ---------- 配色 ----------
 # 主题「精密仪器」：深墨蓝控制台侧栏 + 冷白数据区（自 v1.2.0 沿用至今）。
@@ -43,6 +43,10 @@ C = {
     "warning_bg": "#FFF4E5",
     "tip_bg": "#FFF8E8",
     "tip_fg": "#8A6D00",
+    # v1.10.6 unslop：常驻提示条改为中性底 + 中性字 + 安静描边，不再用满绿高亮。
+    "notice_bg": "#F7F9FC",
+    "notice_fg": "#5D6A80",
+    "notice_border": "#E2E8F1",
     "high_bg": "#FDECEC",
     "mid_bg": "#FFF3E2",
     "low_bg": "#E7F7F0",
@@ -110,9 +114,12 @@ def fit_stat_font(widget, pairs, card_w=STAT_CARD_W):
             return (STAT_FONT_FAMILY, -px, "bold")
     return (STAT_FONT_FAMILY, -STAT_FONT_MIN_PX, "bold")
 
+# v1.10.6 unslop：原先 8 个符号分属勾/电话/方块/圆圈/横线/问号等不同字形族，
+# 笔画与尺寸都不一致。统一为一套「方形轮廓」几何标记（同一字族、同一尺寸、
+# 与文字同色），只做导航定位、不喧宾夺主。风险色不出现在图标上。
 NAV_ICONS = {
-    "checkup": "✓", "wechat": "✆", "wxwork": "▦", "wps": "▤",
-    "junk": "◎", "large": "▣", "log": "≡", "about": "?",
+    "checkup": "□", "wechat": "□", "wxwork": "□", "wps": "□",
+    "junk": "□", "large": "□", "log": "□", "about": "□",
 }
 
 
@@ -149,6 +156,28 @@ def flat_btn(parent, text, command, *, bg=None, fg=None, font=None,
         activebackground=active_bg, activeforeground=fg, relief="flat", bd=0,
         padx=padx, pady=pady, width=width, cursor="hand2", highlightthickness=0,
     )
+
+
+def outline_btn(parent, text, command, *, fg=None, border=None, font=None,
+                padx=10, pady=4, active_bg=None, width=None):
+    """描边按钮（v1.10.6 unslop）：白底 + 1px 静态描边 + 语义色文字。
+
+    头部工具栏只保留「一键扫描」一个实心主色按钮；「清理选中项」降为
+    危险描边（红色仍表意但不抢眼），两个全选类按钮降为中性描边。
+    tk.Button 在 Windows 上用 highlightbackground + highlightthickness=1
+    实现静态 hairline，bd 仍为 0，不改变 pack 几何。
+    """
+    fg = fg or C["text"]
+    border = border or C["border"]
+    active_bg = active_bg or C["neutral_bg"]
+    b = tk.Button(
+        parent, text=text, command=command, bg=C["card"], fg=fg,
+        font=font or F["btn"], activebackground=active_bg, activeforeground=fg,
+        relief="flat", bd=0, padx=padx, pady=pady, width=width,
+        cursor="hand2", highlightthickness=0,
+    )
+    b.configure(highlightbackground=border, highlightthickness=1)
+    return b
 
 
 def ghost_btn(parent, text, command, *, padx=9, pady=4, font=None):
@@ -317,7 +346,7 @@ class Sidebar(tk.Frame):
             badge.create_line(10, 18, 16, 24, 25, 12, fill=C["white"], width=3,
                               capstyle="round", joinstyle="round")
         txt = tk.Frame(logo, bg=C["sidebar"])
-        txt.pack(side="left", padx=6)
+        txt.pack(side="left", padx=8)
         tk.Label(txt, text="DiskCleaner", bg=C["sidebar"], fg=C["sidebar_text"],
                  font=F["logo"]).pack(anchor="w")
         tk.Label(txt, text="磁盘清理助手", bg=C["sidebar"], fg=C["sidebar_sub"],
@@ -327,7 +356,7 @@ class Sidebar(tk.Frame):
         for key, label, icon in nav_items:
             btn = tk.Label(self, text=f"  {icon}   {label}", bg=C["sidebar"],
                            fg=C["sidebar_sub"], font=F["nav"], anchor="w",
-                           cursor="hand2", padx=10, pady=5)
+                           cursor="hand2", padx=12, pady=5)
             btn.pack(fill="x", padx=8, pady=1)
             btn.bind("<Button-1>", lambda e, k=key: self.on_nav(k))
             btn.bind("<Enter>", lambda e, b=btn, k=key: self._nav_hover(b, k, True))
@@ -339,7 +368,7 @@ class Sidebar(tk.Frame):
                  font=F["body_bold"], anchor="w").pack(fill="x", padx=12, pady=(6, 2))
         self.disk_bars = {}
         disk_wrap = tk.Frame(self, bg=C["sidebar"])
-        disk_wrap.pack(fill="x", padx=10)
+        disk_wrap.pack(fill="x", padx=12)
 
         canvas = tk.Canvas(disk_wrap, bg=C["sidebar"], highlightthickness=0,
                            width=148, height=150)
@@ -402,7 +431,7 @@ class Sidebar(tk.Frame):
         for line in copyright_lines:
             tk.Label(bottom, text=line, bg=C["sidebar"], fg=C["sidebar_sub"],
                      font=F["small"], wraplength=160, justify="left").pack(anchor="w")
-        tk.Label(bottom, text="●  已获得管理员权限", bg=C["sidebar"], fg=C["success"],
+        tk.Label(bottom, text="□  已获得管理员权限", bg=C["sidebar"], fg=C["success"],
                  font=F["admin"]).pack(anchor="w", pady=(4, 1))
         tk.Label(bottom, text=f"DiskCleaner {VERSION}", bg=C["sidebar"], fg=C["sidebar_mute"],
                  font=F["small"]).pack(anchor="w", pady=(3, 0))
@@ -436,22 +465,24 @@ class Sidebar(tk.Frame):
 
 
 class StatCard(tk.Frame):
-    """统计卡片：色点 + 大号数值 + 标签 + 子说明。
+    """统计卡片：标签 + 大号数值 + 弱化单位（v1.10.6 移除装饰色点）。
 
     v1.10.5：数值与单位改用像素字号，并保留 Label 引用供 set_value() 复用以
     更新文本；App._update_stats 会用 fit_stat_font() 按本轮 4 张卡片的真实
     文本统一降档，保证固定宽度卡片在任何数值状态 / DPI 下都不裁切。
+    v1.10.6 unslop：左上角色点只是装饰，且与「风险三色」语义重复——风险色
+    只应出现在真正表示风险的地方。数值本身成为卡片唯一的亮点。
+    dot_color 参数保留以兼容既有调用，但不再绘制。
     """
 
     def __init__(self, parent, label, value, sub, dot_color, width=STAT_CARD_W):
         tk.Frame.__init__(self, parent, bg=C["card"], highlightbackground=C["border"],
                           highlightthickness=1, width=width, height=68)
         self.pack_propagate(False)
-        dot = tk.Canvas(self, width=10, height=10, bg=C["card"], highlightthickness=0)
-        dot.pack(anchor="w", padx=(STAT_PADX, 0), pady=(12, 0))
-        dot.create_oval(1, 1, 9, 9, fill=dot_color)
+        # v1.10.6：不再绘制装饰色点；标签上移，给数值让出更完整的呼吸空间。
         tk.Label(self, text=label, bg=C["card"], fg=C["text_sub"],
-                 font=F["card_label"]).pack(anchor="w", padx=STAT_PADX)
+                 font=F["card_label"]).pack(anchor="w", padx=STAT_PADX,
+                                            pady=(12, 0))
         row = tk.Frame(self, bg=C["card"])
         row.pack(fill="x", padx=STAT_PADX)
         self.value_lbl = tk.Label(row, text=value, bg=C["card"], fg=C["text"],

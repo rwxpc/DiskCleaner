@@ -20,7 +20,7 @@ import wechat
 import wps
 import disktools
 from ui import (
-    C, F, VERSION, NAV_ICONS, setup_styles, flat_btn, ghost_btn, card_frame,
+    C, F, VERSION, NAV_ICONS, setup_styles, flat_btn, outline_btn, ghost_btn, card_frame,
     RoundButton, risk_pill, Sidebar, StatCard, SweepCanvas, MagnifierCanvas,
     STAT_CARD_W, fit_stat_font,
 )
@@ -545,19 +545,20 @@ class App:
         配合 _page_header 的工具区优先 pack，杜绝「取消全选」被挤压裁切。
         """
         right = self.pages[key]["header_right"]
+        # v1.10.6 unslop：全页只保留「一键扫描」一个实心主色按钮。
+        # 「清理选中项」降为危险描边（红色仍表意但不与扫描按钮争夺注意力），
+        # 两个全选类按钮降为中性描边，注意力回到下方的扫描结果。
         if scan_command is not None:
             flat_btn(right, "一键扫描", scan_command,
                      bg=C["primary"], fg=C["white"],
                      font=F["tool_btn"]).pack(side="right", padx=4)
-        flat_btn(right, "清理选中项", lambda: self.clean_selected(key),
-                 bg=C["danger"], fg=C["white"],
-                 font=F["tool_btn"]).pack(side="right", padx=4)
-        flat_btn(right, "全选", lambda: self.select_all(key, True),
-                 bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"],
-                 font=F["tool_btn"]).pack(side="right", padx=4)
-        flat_btn(right, "取消全选", lambda: self.select_all(key, False),
-                 bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"],
-                 font=F["tool_btn"]).pack(side="right", padx=4)
+        outline_btn(right, "清理选中项", lambda: self.clean_selected(key),
+                    fg=C["danger_hover"], border=C["danger"],
+                    font=F["tool_btn"]).pack(side="right", padx=4)
+        outline_btn(right, "全选", lambda: self.select_all(key, True),
+                    fg=C["text_sub"], font=F["tool_btn"]).pack(side="right", padx=4)
+        outline_btn(right, "取消全选", lambda: self.select_all(key, False),
+                    fg=C["text_sub"], font=F["tool_btn"]).pack(side="right", padx=4)
         return right
 
     def _make_detail_panel(self, work, key):
@@ -567,7 +568,7 @@ class App:
         scroller 内用 Canvas + 内部 Frame 承载全部文本，滚轮递归绑定到所有子控件。
         """
         detail = card_frame(work, width=236)
-        detail.pack(side="right", fill="y", padx=(9, 0))
+        detail.pack(side="right", fill="y", padx=(8, 0))
         detail.pack_propagate(False)  # 固定尺寸，避免空内容时塌成 1px 不可见
 
         # ---- 底部固定操作区（先 pack，始终贴底，不随内容滚动）----
@@ -680,12 +681,12 @@ class App:
         page = self.pages["checkup"]["frame"]
         self._page_header("checkup")
         # 提示条
-        tip = tk.Frame(page, bg=C["success_bg"], highlightbackground=C["success_border"],
+        tip = tk.Frame(page, bg=C["notice_bg"], highlightbackground=C["notice_border"],
                        highlightthickness=1)
         tip.pack(fill="x", padx=16, pady=(0, 6))
         self.checkup_tip = tk.Label(tip, text="点击右上角「一键扫描」开始全盘扫描…",
-                                    bg=C["success_bg"], fg=C["success"],
-                                    font=F["body"], anchor="w", padx=10, pady=4)
+                                    bg=C["notice_bg"], fg=C["notice_fg"],
+                                    font=F["body"], anchor="w", padx=12, pady=4)
         self.checkup_tip.pack(fill="x")
         # v1.5.1：14 类均为 C 盘固定路径，原「扫描磁盘」勾选栏已移除。
         # _selected_drives("checkup") 固定返回 ["C:"]，供扫描弹窗标题与进度文案使用。
@@ -700,7 +701,7 @@ class App:
             ("high", "高风险", C["danger"]),
         ):
             card = StatCard(stats, label, "0 B", "0 项", dot, width=STAT_CARD_W)
-            card.pack(side="left", padx=(0, 7))
+            card.pack(side="left", padx=(0, 8))
             self.stat_cards[key] = card
         # 初始「0 B / 0 项」也走同一套自适应字号，避免扫描前后字号跳变
         init_font = fit_stat_font(self.stat_cards["total"],
@@ -865,15 +866,15 @@ class App:
         page = self.pages["log"]["frame"]
         self._page_header("log")
         right = self.pages["log"]["header_right"]
-        flat_btn(right, "清空显示", lambda: self._clear_log(),
-                 bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"],
-                 padx=8, pady=4).pack(side="right", padx=4)
-        flat_btn(right, "打开日志目录", lambda: self._open_log_dir(),
-                 bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"],
-                 padx=8, pady=4).pack(side="right", padx=4)
-        flat_btn(right, "复制全部", lambda: self._copy_log(),
-                 bg=C["neutral_bg"], fg=C["text"], active_bg=C["neutral_hover"],
-                 padx=8, pady=4).pack(side="right", padx=4)
+        # v1.10.6 unslop：日志页三个次要操作与各页头部的次要按钮同款式
+        # （中性描边），全程序只保留「一键扫描」一个实心主色按钮。
+        # 弹窗内的按钮是用户早先指定的样式，不在本轮改动范围。
+        outline_btn(right, "清空显示", lambda: self._clear_log(),
+                    fg=C["text_sub"], padx=8, pady=4).pack(side="right", padx=4)
+        outline_btn(right, "打开日志目录", lambda: self._open_log_dir(),
+                    fg=C["text_sub"], padx=8, pady=4).pack(side="right", padx=4)
+        outline_btn(right, "复制全部", lambda: self._copy_log(),
+                    fg=C["text_sub"], padx=8, pady=4).pack(side="right", padx=4)
 
         box = card_frame(page)
         box.pack(fill="both", expand=True, padx=16, pady=(0, 8))
